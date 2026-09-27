@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/oh-my-cpa/oh-my-cpa/internal/applog"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/auth"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/config"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/discovery"
@@ -39,7 +40,10 @@ type Handler struct {
 	cipher          *appcrypto.Cipher
 	discoverer      *discovery.Discoverer
 	logger          *slog.Logger
-	auth            *auth.Manager
+	// serviceLog is the bounded copy of this process's own log the console reads;
+	// nil when the logger was not built with the applog tee.
+	serviceLog *applog.Buffer
+	auth       *auth.Manager
 	// usage reports the background capture pipeline; nil when ingestion is off.
 	usage usagePipeline
 	// pricing serves model prices and the models.dev sync; nil until SetPricing.
@@ -95,6 +99,7 @@ func NewHandler(cfg config.Config, repo *repository.Repository, cipher *appcrypt
 		cipher:           cipher,
 		discoverer:       discovery.NewDiscoverer(cipher),
 		logger:           logger,
+		serviceLog:       applog.BufferOf(logger),
 		auth:             authManager,
 		startTime:        time.Now(),
 		limiter:          newLoginLimiter(),
@@ -141,6 +146,7 @@ func (h *Handler) Router() http.Handler {
 func (h *Handler) routes() chi.Router {
 	router := chi.NewRouter()
 	router.Use(securityHeaders)
+	router.Use(assignRequestID)
 	// The demo boundary has to sit above the routing table, because it classifies the
 	// route rather than the handler: see demo_policy.go. Outside demo mode the guard
 	// is not installed at all.
@@ -184,6 +190,7 @@ func (h *Handler) routes() chi.Router {
 				v1.Get("/management/logs", h.managementLogs)
 				v1.Delete("/management/logs", h.clearManagementLogs)
 				v1.Get("/management/logs/status", h.managementLogsStatus)
+				v1.Get("/management/service-logs", h.serviceLogs)
 				v1.Get("/management/request-error-logs", h.requestErrorLogs)
 				v1.Get("/management/request-error-logs/{name}", h.downloadRequestErrorLog)
 				v1.Get("/preferences", h.listPreferences)
@@ -988,6 +995,14 @@ func (h *Handler) recordAudit(request *http.Request, action, targetType, targetI
 	}
 	summary := requestSourceSummary(request)
 	reqID := getOrGenerateRequestID(request)
+	if clientID := clientRequestID(request); clientID != "" {
+		withClient := make(map[string]any, len(details)+1)
+		for key, value := range details {
+			withClient[key] = value
+		}
+		withClient["client_request_id"] = clientID
+		details = withClient
+	}
 	_, err := h.repo.RecordAuditEvent(request.Context(), repository.AuditEvent{
 		Action:        action,
 		TargetType:    targetType,
@@ -1013,13 +1028,47 @@ func (h *Handler) recordAudit(request *http.Request, action, targetType, targetI
 	return nil
 }
 
+type requestIDKey struct{}
+
+// assignRequestID gives every request one server-generated id before any handler runs,
+// and answers it back as X-Request-ID.
+//
+// A write audits its attempt and its outcome as two rows, and the trail pairs them by
+// request id. Generating the id per audit call gave the two rows different ids, so every
+// write read as an unfinished attempt next to an unrelated success. The id is never the
+// caller's own X-Request-ID: a caller that sent one value on two requests would pair an
+// attempt with another request's outcome and hide it. A caller's id is kept on the audit
+// row as `client_request_id` instead (see recordAudit).
+func assignRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		id := uuid.NewString()
+		writer.Header().Set("X-Request-ID", id)
+		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), requestIDKey{}, id)))
+	})
+}
+
+// getOrGenerateRequestID returns the id assignRequestID gave the request. A handler
+// reached without the middleware (a direct call in a test) gets a fresh id.
 func getOrGenerateRequestID(request *http.Request) string {
 	if request != nil {
-		if id := strings.TrimSpace(request.Header.Get("X-Request-ID")); id != "" && len([]rune(id)) <= 128 {
-			return security.RedactText(id)
+		if id, ok := request.Context().Value(requestIDKey{}).(string); ok && id != "" {
+			return id
 		}
 	}
 	return uuid.NewString()
+}
+
+// clientRequestID is the caller's own X-Request-ID, redacted and bounded, for correlation
+// with the caller's logs; empty when it sent none or an oversized one.
+func clientRequestID(request *http.Request) string {
+	if request == nil {
+		return ""
+	}
+	id := strings.TrimSpace(request.Header.Get("X-Request-ID"))
+	if id == "" || len([]rune(id)) > 128 {
+		return ""
+	}
+	return security.RedactText(id)
 }
 
 func requestSourceSummary(request *http.Request) string {
