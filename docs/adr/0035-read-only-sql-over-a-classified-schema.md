@@ -29,12 +29,18 @@ repository owns (`internal/repository/readonly_query.go`), in four independent l
    comments included) and accepts exactly one `SELECT` or `WITH` statement.
 3. **The compiled program is checked, not the text.** Before running, the statement's `EXPLAIN`
    program is read: every b-tree it opens must belong to a table classified readable, every column
-   it reads - through a table or an index - must not be a redacted one, and any write opcode,
-   write transaction, virtual table or non-`main` database is refused. Checking the program is
+   it reads - through a table or an index - must not be a redacted one, no index it opens may
+   cover a redacted column (a seek on one answers yes or no about the hidden value without reading
+   it), and any write to a stored table, write transaction, virtual table or non-`main` database
+   is refused. Row writes to SQLite's own scratch b-trees, which `ORDER BY ... LIMIT`, `UNION`,
+   `DISTINCT` and recursive CTEs use, are allowed. Checking the program is
    what makes aliases, views, subqueries and CTEs unable to route around the policy; the price is
    that table-valued functions (`json_each`, `pragma_*`) are unavailable.
 4. **The result is bounded and masked.** At most 200 rows and 24 KiB, 500 characters per cell and
-   5 seconds per query; text shaped like a credential is replaced and email addresses are masked.
+   5 seconds per query; text shaped like a credential, a URL's userinfo and email addresses are
+   masked in cells and in error messages. Masking matches shapes, so it is best-effort: a value
+   transformed in SQL (`hex`, `replace`, `substr`) passes unmasked. What must never leave is kept
+   out by layer 3, which is why a column able to carry a secret is redacted rather than masked.
 
 Tables are opt-in. Every table is either readable (with its redacted columns named) or hidden with
 a recorded reason, and a test fails when a migration adds a table that is neither, so a new table

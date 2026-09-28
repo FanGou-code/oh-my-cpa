@@ -147,6 +147,104 @@ func TestReadOnlyQueryReadsBoundedAndMasked(t *testing.T) {
 	}
 }
 
+// ORDER BY ... LIMIT, UNION, DISTINCT and recursive CTEs fill SQLite's own scratch b-trees with
+// row writes; those must not be mistaken for writes to a table.
+func TestReadOnlyQueryAllowsScratchTableShapes(t *testing.T) {
+	repo := queryTestRepository(t)
+	ctx := context.Background()
+	if _, err := repo.SQL().Exec(`INSERT INTO pricing_channels (channel, multiplier, note, updated_at_ms) VALUES
+		('alpha', 1.5, '', 1), ('beta', 2, '', 2), ('gamma', 1, '', 3)`); err != nil {
+		t.Fatal(err)
+	}
+	for statement, want := range map[string]int{
+		`SELECT channel FROM pricing_channels ORDER BY multiplier DESC LIMIT 2`:                                   2,
+		`SELECT channel FROM pricing_channels WHERE multiplier > 1 UNION SELECT channel FROM pricing_channels`:    3,
+		`SELECT DISTINCT multiplier FROM pricing_channels ORDER BY multiplier`:                                    3,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5) SELECT i FROM n`:             5,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION SELECT i + 1 FROM n WHERE i < 4) SELECT i FROM n ORDER BY i DESC`: 4,
+	} {
+		result, err := repo.ReadOnlyQuery(ctx, statement, 0)
+		if err != nil || len(result.Rows) != want {
+			t.Errorf("%s: %v %+v", statement, err, result)
+		}
+	}
+}
+
+// An index on a redacted column would let a WHERE seek answer yes or no about the hidden value
+// without any column read, so no migration may create one, and a query may not open one.
+func TestRedactedColumnsAreNeverIndexed(t *testing.T) {
+	repo := queryTestRepository(t)
+	ctx := context.Background()
+	conn, err := repo.readOnlyConn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	schema, err := loadQuerySchema(ctx, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range schema.roots {
+		if root.isIndex && root.coversDenied {
+			t.Errorf("index %s covers a redacted column of %s", root.index, root.table)
+		}
+	}
+	for _, statement := range []string{
+		`CREATE INDEX error_events_body ON error_events(body)`,
+		`CREATE INDEX error_events_body_length ON error_events(length(body))`,
+		`CREATE INDEX error_events_with_body ON error_events(timestamp_ms) WHERE body LIKE '%key%'`,
+	} {
+		t.Run(statement, func(t *testing.T) {
+			repo := queryTestRepository(t)
+			if _, err := repo.SQL().Exec(statement); err != nil {
+				t.Fatal(err)
+			}
+			index := strings.Fields(statement)[2]
+			conn, err := repo.readOnlyConn(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			schema, err := loadQuerySchema(ctx, conn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			isFlagged := false
+			for _, root := range schema.roots {
+				isFlagged = isFlagged || root.index == index && root.coversDenied
+			}
+			if !isFlagged {
+				t.Errorf("index %s is not recognized as covering a redacted column", index)
+			}
+			for _, query := range []string{
+				`SELECT count(*) FROM error_events INDEXED BY ` + index + ` WHERE timestamp_ms > 0 AND body LIKE '%key%'`,
+				`SELECT count(*) FROM error_events WHERE body = 'secret'`,
+			} {
+				if _, err := repo.ReadOnlyQuery(ctx, query, 0); queryCode(err) != "query_forbidden" {
+					t.Errorf("%s: %v", query, err)
+				}
+			}
+		})
+	}
+}
+
+func TestReadOnlyQueryMasksErrorsAndURLCredentials(t *testing.T) {
+	repo := queryTestRepository(t)
+	ctx := context.Background()
+	if _, err := repo.SQL().Exec(`INSERT INTO pricing_channels (channel, multiplier, note, updated_at_ms) VALUES
+		('alpha', 1, ?, 1), ('beta', 1, 'https://admin:hunter2@example.com/v1', 2)`, "sk-"+"abcdefghijklmnopqrstu"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := repo.ReadOnlyQuery(ctx, `SELECT json_extract('{}', note) FROM pricing_channels WHERE channel = 'alpha'`, 0)
+	if queryCode(err) != "query_invalid" || strings.Contains(err.(*QueryError).Detail, "abcdefghijklmnopqrstu") {
+		t.Fatalf("error text: %v", err)
+	}
+	result, err := repo.ReadOnlyQuery(ctx, `SELECT note FROM pricing_channels WHERE channel = 'beta'`, 0)
+	if err != nil || result.Rows[0][0] != "https://[redacted]@example.com/v1" {
+		t.Fatalf("url userinfo: %v %+v", err, result)
+	}
+}
+
 func TestReadOnlyQueryStopsAtItsTimeLimit(t *testing.T) {
 	repo := queryTestRepository(t)
 	ctx, cancel := context.WithCancel(context.Background())

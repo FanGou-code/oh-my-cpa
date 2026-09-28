@@ -274,9 +274,11 @@ func (e *Executor) auditDetails(ctx context.Context, p Principal, name, id, stat
 	}
 	return nil
 }
+
 // DetailedError is a failure whose caller can act on more than its code - a query's author
 // learning which column the engine did not recognise. The detail must be safe to show the model
-// and the operator: it describes the request, never stored data or credentials.
+// and the operator: it describes the request, and any stored value it quotes is held to the same
+// masking as the result it replaces.
 type DetailedError interface {
 	error
 	FailureDetail() string

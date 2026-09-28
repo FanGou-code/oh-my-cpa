@@ -30,7 +30,7 @@ func (s *Service) registerDatabase(registry *capability.Registry) error {
 	}); err != nil {
 		return err
 	}
-	return agentRead(registry, "database_query", "Run one read-only SQLite SELECT against the OMC database for questions the other capabilities cannot answer; call database_schema first. Times are epoch milliseconds (`*_ms`). Prefer aggregates and WHERE on time columns: at most 200 rows and 5 seconds, long text is cut, and credential-like text and email addresses are masked. Table-valued functions (json_each, pragma_*) are unavailable; use json_extract.", func(ctx context.Context, input DatabaseQueryInput) (repository.QueryResult, error) {
+	return agentRead(registry, "database_query", "Run one read-only SQLite SELECT against the OMC database for questions the other capabilities cannot answer; call database_schema first. Times are epoch milliseconds (`*_ms`). Prefer aggregates and WHERE on time columns: at most 200 rows and 5 seconds, and long text is cut. Credential-like text, URL credentials and email addresses are masked on a best-effort basis; hidden tables and redacted columns are what keep secrets out. Table-valued functions (json_each, pragma_*) are unavailable; use json_extract.", func(ctx context.Context, input DatabaseQueryInput) (repository.QueryResult, error) {
 		return s.Repo.ReadOnlyQuery(ctx, input.SQL, input.MaxRows)
 	})
 }

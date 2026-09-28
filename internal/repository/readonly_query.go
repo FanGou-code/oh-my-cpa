@@ -28,11 +28,16 @@ import (
 //  2. The text must be exactly one SELECT (or WITH ... SELECT) statement.
 //  3. The compiled program is read before it runs. Every table or index it opens must belong to a
 //     table this file classifies as readable, every column it reads must not be a redacted one,
-//     and a program that writes, opens a virtual table, or touches a database other than `main`
-//     is refused. Reading the program rather than the text is what makes aliases, views,
-//     subqueries and CTEs unable to route around the policy.
+//     no index it opens may cover a redacted column (a seek on one would answer yes or no about
+//     the hidden value without ever reading it), and a program that writes a real table, opens a
+//     virtual table, or touches a database other than `main` is refused. Reading the program
+//     rather than the text is what makes aliases, views, subqueries and CTEs unable to route
+//     around the policy.
 //  4. What comes back is bounded - rows, cell length, total size, time - and text that looks like
-//     a credential or an email address is masked before it leaves the process.
+//     a credential, an email address or a URL's userinfo is masked before it leaves the process,
+//     in cells and in error messages alike. Masking is best-effort, not a boundary: it matches
+//     shapes, so a value transformed in SQL (hex, replace, substr) passes unmasked. What must not
+//     leave is kept out by layer 3, through the hidden tables and redacted columns.
 //
 // Tables are opt-in: a table a migration adds is unreadable until it is classified here, and the
 // classification test fails until that decision is made.
@@ -189,6 +194,10 @@ type queryRoot struct {
 	table   string
 	indexed []int
 	isIndex bool
+	// index names the index for a refusal; coversDenied marks one whose key, expression or
+	// partial-index condition involves a redacted column.
+	index        string
+	coversDenied bool
 }
 
 func loadQuerySchema(ctx context.Context, conn *sql.Conn) (*querySchema, error) {
@@ -242,7 +251,13 @@ func loadQuerySchema(ctx context.Context, conn *sql.Conn) (*querySchema, error) 
 		if item.kind != "index" {
 			continue
 		}
-		root := queryRoot{table: item.table, isIndex: true}
+		root := queryRoot{table: item.table, isIndex: true, index: item.name}
+		denied := schema.tables[item.table].deniedSet()
+		for name := range denied {
+			if sqlMentions(item.sql, name) {
+				root.coversDenied = true
+			}
+		}
 		columns, err := conn.QueryContext(ctx, `SELECT cid FROM pragma_index_xinfo(?) ORDER BY seqno`, item.name)
 		if err != nil {
 			return nil, err
@@ -254,11 +269,28 @@ func loadQuerySchema(ctx context.Context, conn *sql.Conn) (*querySchema, error) 
 				return nil, err
 			}
 			root.indexed = append(root.indexed, cid)
+			info := schema.tables[item.table]
+			if len(denied) > 0 && (cid == -2 || cid >= 0 && cid < len(info.columns) && denied[info.columns[cid]]) {
+				root.coversDenied = true
+			}
 		}
 		columns.Close()
 		schema.roots[item.root] = root
 	}
 	return schema, nil
+}
+
+func (info *queryTableInfo) deniedSet() map[string]bool {
+	if info == nil {
+		return nil
+	}
+	return info.denied
+}
+
+// sqlMentions reports whether `name` appears in a schema statement as a whole word, which is
+// deliberately loose: a false match only refuses an index, never admits one.
+func sqlMentions(statement, name string) bool {
+	return regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(name) + `($|[^A-Za-z0-9_])`).MatchString(statement)
 }
 
 // isReadable is the table-level policy: classified as readable, and not a WITHOUT ROWID table
@@ -272,13 +304,27 @@ func (s *querySchema) isReadable(table string) bool {
 	return isListed && info != nil && !(info.isWithoutRowID && len(denied) > 0)
 }
 
-// Opcodes that change a database or reach outside `main`'s ordinary tables. A SELECT never
-// compiles to one of them; seeing one means the statement is not what it appears to be.
+// Opcodes that change a database. A SELECT never compiles to one of them; seeing one means the
+// statement is not what it appears to be.
 var forbiddenOpcodes = map[string]bool{
-	"OpenWrite": true, "Insert": true, "Delete": true, "IdxInsert": true, "IdxDelete": true,
-	"Clear": true, "Destroy": true, "CreateBtree": true, "ParseSchema": true, "SqlExec": true,
-	"Vacuum": true, "IncrVacuum": true, "JournalMode": true, "VOpen": true, "VFilter": true,
-	"VColumn": true, "VUpdate": true, "VCreate": true, "VDestroy": true, "LoadAnalysis": true,
+	"OpenWrite": true, "Clear": true, "Destroy": true, "CreateBtree": true, "ParseSchema": true,
+	"SqlExec": true, "Vacuum": true, "IncrVacuum": true, "JournalMode": true, "VUpdate": true,
+	"VCreate": true, "VDestroy": true, "LoadAnalysis": true,
+}
+
+// Opcodes that open or read a virtual table, which is how table-valued functions compile.
+var virtualTableOpcodes = map[string]bool{"VOpen": true, "VFilter": true, "VColumn": true}
+
+// Row writes are how SQLite fills its own scratch b-trees - ORDER BY ... LIMIT, UNION, DISTINCT
+// and recursive CTEs all insert into an ephemeral table or sorter - so they are refused only on a
+// cursor that is not one of those.
+var cursorWriteOpcodes = map[string]bool{"Insert": true, "Delete": true, "IdxInsert": true, "IdxDelete": true}
+
+var scratchOpenOpcodes = map[string]bool{"OpenEphemeral": true, "OpenAutoindex": true, "SorterOpen": true, "OpenPseudo": true}
+
+type queryInstruction struct {
+	opcode     string
+	p1, p2, p3 int64
 }
 
 // checkQueryProgram reads the compiled program of `statement` and refuses it unless every read
@@ -289,16 +335,44 @@ func checkQueryProgram(ctx context.Context, conn *sql.Conn, schema *querySchema,
 		return queryError("query_invalid", "%s", sqliteMessage(err))
 	}
 	defer rows.Close()
-	cursors := map[int64]queryRoot{}
+	var program []queryInstruction
 	for rows.Next() {
-		var address, p1, p2, p3, p5 int64
-		var opcode string
+		var address, p5 int64
+		var instruction queryInstruction
 		var p4, comment sql.NullString
-		if err := rows.Scan(&address, &opcode, &p1, &p2, &p3, &p4, &p5, &comment); err != nil {
+		if err := rows.Scan(&address, &instruction.opcode, &instruction.p1, &instruction.p2, &instruction.p3, &p4, &p5, &comment); err != nil {
 			return err
 		}
-		if forbiddenOpcodes[opcode] {
-			return queryError("query_forbidden", "only plain SELECT reads of OMC tables are allowed; table-valued functions such as json_each and pragma_* are not available")
+		program = append(program, instruction)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// Cursors are classified over the whole program before any write is judged, because the
+	// listing is not execution order: a loop can write a cursor above the instruction opening it.
+	// A cursor number that is ever opened on a real b-tree never counts as scratch.
+	scratch, stored := map[int64]bool{}, map[int64]bool{}
+	for _, instruction := range program {
+		switch {
+		case scratchOpenOpcodes[instruction.opcode] || instruction.opcode == "OpenDup":
+			scratch[instruction.p1] = true
+		case instruction.opcode == "OpenRead" || instruction.opcode == "ReopenIdx" || instruction.opcode == "OpenWrite":
+			stored[instruction.p1] = true
+		}
+	}
+	for _, instruction := range program {
+		if instruction.opcode == "OpenDup" && !scratch[instruction.p2] {
+			stored[instruction.p1] = true
+		}
+	}
+	cursors := map[int64]queryRoot{}
+	for _, instruction := range program {
+		opcode, p1, p2, p3 := instruction.opcode, instruction.p1, instruction.p2, instruction.p3
+		if virtualTableOpcodes[opcode] {
+			return queryError("query_forbidden", "table-valued functions such as json_each and pragma_* are not available; use json_extract")
+		}
+		if forbiddenOpcodes[opcode] || cursorWriteOpcodes[opcode] && (!scratch[p1] || stored[p1]) {
+			return queryError("query_forbidden", "the statement would write; only SELECT reads of OMC tables are allowed")
 		}
 		switch opcode {
 		case "Transaction":
@@ -315,6 +389,9 @@ func checkQueryProgram(ctx context.Context, conn *sql.Conn, schema *querySchema,
 			}
 			if !schema.isReadable(root.table) {
 				return queryError("query_forbidden", "table %s is not readable", root.table)
+			}
+			if root.coversDenied {
+				return queryError("query_forbidden", "index %s covers a redacted column of %s", root.index, root.table)
 			}
 			cursors[p1] = root
 		case "OpenDup":
@@ -348,7 +425,7 @@ func checkQueryProgram(ctx context.Context, conn *sql.Conn, schema *querySchema,
 			}
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 // QuerySchema lists the tables a read-only query may use, and the columns each hides.
@@ -472,15 +549,17 @@ func mapQueryFailure(ctx context.Context, err error) error {
 }
 
 // sqliteMessage is the engine's own complaint without the driver's framing, which is what a
-// query's author needs to fix it. It never contains stored data: SQLite reports names from the
-// statement, not values from the database.
+// query's author needs to fix it. A runtime error can quote a stored value (json_extract reports
+// the path it was given, which can be a column), so the message is masked like a cell. The
+// redacted columns cannot reach it: the program check refuses reading them before anything runs.
 func sqliteMessage(err error) string {
 	message := err.Error()
 	if index := strings.LastIndex(message, "): "); index >= 0 {
 		message = message[index+3:]
 	}
-	if len(message) > 300 {
-		message = message[:300]
+	message = maskSensitiveText(message)
+	if utf8.RuneCountInString(message) > 300 {
+		message = string([]rune(message)[:300])
 	}
 	return message
 }
@@ -505,7 +584,10 @@ func queryCell(value any) any {
 }
 
 var (
-	emailPattern = regexp.MustCompile(`([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})`)
+	// A URL's userinfo is replaced before emails are looked for, so `user:secret@host` is
+	// recognized as credentials rather than as an address.
+	urlUserinfoPattern = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@`)
+	emailPattern       = regexp.MustCompile(`([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})`)
 	// Shapes of credentials that commonly end up in text a provider returns: OpenAI-style and
 	// Anthropic-style keys, Google API keys and OAuth access tokens, GitHub and Slack tokens,
 	// JWTs, and anything presented as a bearer token.
@@ -513,13 +595,18 @@ var (
 )
 
 func maskQueryText(text string) string {
-	text = credentialPattern.ReplaceAllString(text, "[redacted]")
-	text = emailPattern.ReplaceAllString(text, "$1***@$2")
+	text = maskSensitiveText(text)
 	if utf8.RuneCountInString(text) > MAX_QUERY_CELL_CHARS {
 		runes := []rune(text)
 		text = string(runes[:MAX_QUERY_CELL_CHARS]) + "…"
 	}
 	return text
+}
+
+func maskSensitiveText(text string) string {
+	text = credentialPattern.ReplaceAllString(text, "[redacted]")
+	text = urlUserinfoPattern.ReplaceAllString(text, "$1[redacted]@")
+	return emailPattern.ReplaceAllString(text, "$1***@$2")
 }
 
 // singleSelect accepts exactly one SELECT or WITH statement, with an optional trailing semicolon,
