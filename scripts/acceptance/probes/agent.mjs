@@ -299,20 +299,32 @@ export async function agentQuestion({ base, page, check }) {
   const panel = page.locator('[data-testid="agent-question"]');
   await panel.waitFor();
   check('a question takes the composer\'s place', await page.getByLabel('Describe an OMC query or action').count() === 0 && await panel.getByText('Which window should the summary cover?').isVisible());
+  // One question at a time behind a tab per question and a review tab, as the coding agents' own
+  // question prompts do; the first step offers Next, never a submit that could skip the rest.
+  check('each question has its own tab, and a review tab ends the row', await panel.getByRole('tab').count() === 3 && await panel.getByText('Question 1 of 2').isVisible());
+  const next = panel.getByRole('button', { name: 'Next', exact: true });
+  check('an unanswered question cannot move on', await next.isDisabled() && await panel.getByRole('button', { name: 'Submit answer', exact: true }).count() === 0);
+  // A digit picks its option, and a single choice moves on by itself because the pick is the answer.
+  await panel.press('2');
+  await panel.getByText('Which providers matter?').waitFor();
+  check('a digit picks a single-choice option and moves to the next question', await panel.getByRole('tab', { name: /Window/ }).getAttribute('aria-selected') === 'false'
+    && await panel.getByText('Question 2 of 2').isVisible());
+  // Choices are asserted by what they commit rather than by the click: the row renders its checked
+  // state from the draft it is handed, one render after the click that changed it.
+  const openAI = panel.getByRole('checkbox', { name: 'OpenAI' });
+  await openAI.click();
+  await until(async () => await openAI.getAttribute('aria-checked') === 'true', { label: 'the chosen option to commit' });
+  await panel.getByRole('checkbox', { name: 'Something else…' }).click();
+  await panel.getByLabel('Type your answer').fill('Exclude test keys');
+  await until(async () => await next.isEnabled(), { label: 'the second answer to allow Next' });
+  await next.click();
   const submit = panel.getByRole('button', { name: 'Submit answer', exact: true });
-  check('an unanswered question cannot be sent', await submit.isDisabled());
-  // Choices are asserted by what they commit rather than by the click: an option group renders its
-  // checked state from the value it is handed, one render after the click that changed it.
-  for (const option of [panel.getByRole('radio', { name: /Last 24 hours/ }), panel.getByRole('checkbox', { name: 'OpenAI' }), panel.getByRole('checkbox', { name: 'Gemini' })]) {
-    await option.click();
-    await until(async () => await option.isChecked(), { label: 'the chosen option to commit' });
-  }
-  await panel.getByLabel('Or type another answer').first().fill('Exclude test keys');
-  await until(async () => await submit.isEnabled(), { label: 'the answer to become sendable' });
+  await submit.waitFor();
+  check('the review step shows every answer before it is sent', await panel.getByText('Last 24 hours', { exact: true }).isVisible() && await panel.getByText('OpenAI, Exclude test keys', { exact: true }).isVisible());
   await submit.click();
   await page.getByText('Here is the 24 hour summary.').waitFor();
   const answers = decisions[0]?.answer?.answers;
   check('the reply carries each question\'s choices and typed text', decisions.length === 1 && decisions[0].approve === true
-    && JSON.stringify(answers) === JSON.stringify([{ selected: ['Last 24 hours'], text: 'Exclude test keys' }, { selected: ['OpenAI', 'Gemini'], text: '' }]), JSON.stringify(decisions));
+    && JSON.stringify(answers) === JSON.stringify([{ selected: ['Last 24 hours'], text: '' }, { selected: ['OpenAI'], text: 'Exclude test keys' }]), JSON.stringify(decisions));
   check('answering continues the run and returns the composer', runs.length === 2 && runs[1].message === '' && await page.getByLabel('Describe an OMC query or action').count() === 1);
 }

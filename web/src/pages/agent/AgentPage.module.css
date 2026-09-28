@@ -236,25 +236,24 @@
 /* ── question panel ────────────────────────────────────────────────────────── */
 
 /* Takes the composer's place while the agent waits for an answer, so it keeps the composer's frame
-   and carries the accent on it: this is where the operator's next input goes. */
+   and carries the accent on it: this is where the operator's next input goes. The layout follows
+   the coding agents' question prompts: tabs per question, numbered option rows, a review step. */
 .question {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 60vh;
-  padding: 14px 16px;
+  max-height: 64vh;
+  padding: 14px 16px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  outline: none;
 }
 
-/* Only the questions scroll: Skip and Submit stay in view however many options the agent sent. */
-.question-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 0;
-  overflow-y: auto;
+/* The panel takes focus only so digit keys reach it; its accent frame already marks where input
+   goes, and the console's ring would draw a second frame around it. */
+.question:focus-visible {
+  box-shadow: none !important;
 }
 
 .question-head {
@@ -263,21 +262,96 @@
   gap: 8px;
   color: var(--fg);
   font-size: 12px;
-  font-weight: 600;
 }
 
 .question-icon {
   color: var(--accent);
 }
 
-.question-item {
+.question-title {
+  font-weight: 600;
+}
+
+.question-progress {
+  margin-left: auto;
+  color: var(--meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One tab per question and a last one to review; a tab says whether its question is answered, so
+   the row doubles as progress. */
+.question-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  border-bottom: 1px solid var(--border-soft);
+  scrollbar-width: none !important;
+}
+
+.question-tabs::-webkit-scrollbar {
+  display: none !important;
+}
+
+.question-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  margin-bottom: -1px;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+
+.question-tab:hover {
+  color: var(--fg);
+}
+
+.question-tab[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--fg);
+}
+
+.question-tab-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.is-answered .question-tab-mark {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--accent-on);
+}
+
+.question-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only the question scrolls: Skip and Submit stay in view however many options the agent sent. */
+.question-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .question-text {
@@ -285,10 +359,10 @@
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 2px;
-  padding: 0;
+  margin: 0;
   color: var(--fg);
-  font-size: 13.5px;
+  font-size: 14.5px;
+  font-weight: 500;
   line-height: 1.5;
 }
 
@@ -298,56 +372,214 @@
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 11px;
+  font-weight: 400;
   line-height: 18px;
+}
+
+.question-mode {
+  margin: -4px 0 0;
+  color: var(--meta);
+  font-size: 11.5px;
 }
 
 .question-options {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-/* Each option is a row the whole width of the panel rather than a bare radio: the target is the
-   sentence, not the 16px control, and the chosen row keeps the accent edge so a multi-question
-   form can be checked at a glance before submitting. */
-.question-options :global(.ant-radio-wrapper),
-.question-options :global(.ant-checkbox-wrapper) {
+/* A row the width of the panel: the target is the sentence, not a 16px control, and the number is
+   the key that picks it. */
+.question-option {
+  display: flex;
   align-items: flex-start;
-  margin: 0;
-  padding: 5px 10px;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   transition: border-color var(--motion-fast), background-color var(--motion-fast);
 }
 
-.question-options :global(.ant-radio-wrapper:hover),
-.question-options :global(.ant-checkbox-wrapper:hover) {
+.question-option:hover {
   border-color: var(--border);
   background: var(--hover-inset);
 }
 
-/* Doubled class so a chosen row stays marked while the pointer is still over it. */
-.question-options :global(.ant-radio-wrapper.ant-radio-wrapper-checked),
-.question-options :global(.ant-checkbox-wrapper.ant-checkbox-wrapper-checked) {
+.question-option.is-selected,
+.question-other.is-selected {
   border-color: var(--accent);
-  background: var(--hover-inset);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
 }
 
-.question-options :global(.ant-radio),
-.question-options :global(.ant-checkbox) {
-  align-self: flex-start;
-  margin-top: 3px;
-}
-
-.question-option {
+.question-key {
   display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.is-selected .question-key {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+.question-option-body {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+
+.question-option-label {
+  font-size: 13.5px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 
 .question-option-description {
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.5;
+}
+
+.question-check {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  color: var(--accent);
+}
+
+/* "Something else" is an option row whose field opens inside it once chosen. */
+.question-other {
+  border-radius: var(--radius-sm);
+}
+
+.question-other .question-option {
+  border-color: var(--border-soft);
+  background: transparent;
+}
+
+.question-other .question-check {
+  color: var(--meta);
+}
+
+.question-other.is-selected {
+  border: 1px solid var(--accent);
+}
+
+.question-other.is-selected .question-option {
+  border-color: transparent;
+}
+
+.question-other.is-selected .question-check {
+  color: var(--accent);
+}
+
+.question-other-input {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 0 12px 10px;
+}
+
+.question-review {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.question-review-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.question-review-row dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.question-review-row dd {
+  margin: 0;
+}
+
+.question-review-answer {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.question-review-answer:hover {
+  color: var(--accent);
+}
+
+.question-missing {
+  color: var(--warn);
+}
+
+.question-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.question-keys {
+  color: var(--meta);
+  font-size: 11px;
+}
+
+.question-foot-spacer {
+  flex: 1;
+}
+
+@media (hover: none) {
+  .question-option:hover {
+    border-color: var(--border-soft);
+    background: var(--bg);
+  }
+
+  /* No keyboard to press the numbers on, so neither the hint nor the key caps. */
+  .question-keys {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .question {
+    max-height: 70dvh;
+    padding: 12px;
+  }
+
+  .question-keys {
+    display: none;
+  }
 }
 
 /* ── capability directory ──────────────────────────────────────────────────── */

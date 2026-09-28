@@ -10,6 +10,10 @@ import assert from 'node:assert/strict';
 import {
   failureKey,
   isAwaitingAnswer,
+  EMPTY_DRAFT,
+  chooseOption,
+  chooseOther,
+  draftReply,
   isQuestionAnswered,
   operationQuestions,
   pendingOperationID,
@@ -156,6 +160,23 @@ check('a turn stopped on a question is told apart from one awaiting approval', (
   assert.equal(isAwaitingAnswer(asking), true);
   assert.equal(isAwaitingAnswer(approving), false);
   assert.equal(isAwaitingAnswer({ ...asking, status: 'success' }), false);
+});
+
+check('something else replaces a single choice and joins a multiple one', () => {
+  const single = { question: 'Window?', options: [{ label: '1h' }, { label: '24h' }] };
+  const multiple = { ...single, multi_select: true };
+  let draft = chooseOption(EMPTY_DRAFT, single, '1h');
+  draft = chooseOption(draft, single, '24h');
+  assert.deepEqual(draft.selected, ['24h']);
+  draft = { ...chooseOther(draft, single), text: ' later ' };
+  assert.deepEqual(draftReply(draft, single), { selected: [], text: 'later' });
+  // Typed text that is no longer chosen is kept for switching back, but never sent.
+  assert.deepEqual(draftReply(chooseOption(draft, single, '1h'), single), { selected: ['1h'], text: '' });
+  let many = chooseOption(chooseOption(EMPTY_DRAFT, multiple, '1h'), multiple, '24h');
+  many = { ...chooseOther(many, multiple), text: 'both' };
+  assert.deepEqual(draftReply(many, multiple), { selected: ['1h', '24h'], text: 'both' });
+  assert.deepEqual(chooseOption(many, multiple, '1h').selected, ['24h']);
+  assert.deepEqual(draftReply({ ...EMPTY_DRAFT, text: 'free' }, { question: 'Anything?' }), { selected: [], text: 'free' });
 });
 
 check('a question is sendable only when every question has a choice or typed text', () => {

@@ -396,7 +396,9 @@ the configuration workbench.
   of one round as an X `ThoughtChain` with warn-toned attention marks for pending or unconfirmed
   steps; an authorization dialog that opens by itself with one Deny / Allow decision (Allow in the
   danger hue for a destructive capability); agent questions in an accent-framed panel that takes
-  the composer's place, options as full-width rows with the chosen one accent-edged; the data notice as the
+  the composer's place, shaped like the coding agents' question prompts: a tab per question and a
+  Review tab, numbered option rows (a digit picks, the chosen one accent-edged with a filled key
+  cap), "Something else…" as the last row with its field inside it; the data notice as the
   line beneath the composer (no consent checkbox); the reasoning effort as a quiet text button in the
   composer's foot; reasoning shown live and kept with the turn; the sent message shown at once.
 

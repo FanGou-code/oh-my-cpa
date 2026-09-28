@@ -88,6 +88,38 @@ export function operationQuestions(operation: Operation | undefined): AgentQuest
     typeof item === 'object' && item !== null && typeof (item as AgentQuestion).question === 'string');
 }
 
+/**
+ * What the operator has chosen for one question while the panel is open.
+ *
+ * "Something else" is a choice in its own right, as in the coding agents this follows: in a
+ * single-choice question it replaces the options rather than adding to one, so a reply never says
+ * two things at once. Its text is kept while unchosen, so switching back does not lose typing.
+ */
+export interface QuestionDraft {
+  selected: string[];
+  isOther: boolean;
+  text: string;
+}
+
+export const EMPTY_DRAFT: QuestionDraft = { selected: [], isOther: false, text: '' };
+
+export function chooseOption(draft: QuestionDraft, question: AgentQuestion, label: string): QuestionDraft {
+  if (!question.multi_select) return { ...draft, selected: [label], isOther: false };
+  const selected = draft.selected.includes(label) ? draft.selected.filter(item => item !== label) : [...draft.selected, label];
+  return { ...draft, selected };
+}
+
+export function chooseOther(draft: QuestionDraft, question: AgentQuestion): QuestionDraft {
+  if (!question.multi_select) return { ...draft, selected: [], isOther: true };
+  return { ...draft, isOther: !draft.isOther };
+}
+
+/** The reply a draft sends. A question without options is answered by its text alone. */
+export function draftReply(draft: QuestionDraft, question: AgentQuestion): QuestionReply {
+  const isTextChosen = draft.isOther || (question.options ?? []).length === 0;
+  return { selected: draft.selected, text: isTextChosen ? draft.text.trim() : '' };
+}
+
 /** Every question has something to send: a chosen option or typed text. */
 export function isQuestionAnswered(replies: QuestionReply[], count: number): boolean {
   return replies.length === count && replies.every(reply => reply.selected.length > 0 || reply.text.trim() !== '');

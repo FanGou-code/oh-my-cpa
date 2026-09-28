@@ -47,7 +47,9 @@ because it belongs to the conversation rather than to OMC's business operations:
   operation is claimed, so a malformed answer leaves the question open.
 - It is offered to the built-in Agent only; an MCP client has its own way to ask its user.
 - The console draws it in place of the composer rather than as a dialog, because the answer text
-  above it is often what the operator needs to read to reply. Skip is a denial the model is told of.
+  above it is often what the operator needs to read to reply, and in the established coding agents'
+  shape: a tab per question, numbered options a digit key picks, "Something else" as the last
+  option, and a review step before sending. Skip is a denial the model is told of.
 
 ## Consequences
 

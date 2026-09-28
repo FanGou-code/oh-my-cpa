@@ -1057,13 +1057,20 @@ Dismissing the dialog leaves the composer's send as a labelled "Review request" 
 it, and Resume remains only for a decided operation whose run could not continue by itself.
 
 A question the agent asks (`ask_question`) takes the composer's place instead of opening a dialog,
-because the answer above it is often what the operator reads to reply. The panel keeps the
-composer's frame with the accent hue on it; each question shows its optional short chip, its
-options as full-width hairline rows (radio or checkbox) with each option's consequence in muted
-text beneath its label and the chosen row edged in the accent hue, and a typed-answer field that is
-always present. Only the questions scroll; Skip and Submit stay in view. Submit is enabled once
-every question has a choice or text; Skip declines them all. The chain step and the turn footer for
-a pending question read "Awaiting your answer".
+because the answer above it is often what the operator reads to reply. It follows the shape the
+coding agents converged on (Claude Code's AskUserQuestion, Codex's request_user_input, OpenCode's
+question tool). The panel keeps the composer's frame with the accent hue on it. Several questions
+are one tab each plus a Review tab, and a tab carries a `--success` check once its question is
+answered, so the row is also the progress; a single question has no tabs and shows its short
+chip beside the text. Each option is a full-width row with its number as a key cap, the label, and
+its consequence in muted text beneath; the chosen row takes the accent edge, a light accent tint and
+a filled key cap. "Something else…" is always the last row and opens its answer field inside the
+row when chosen; in a single-choice question it replaces the options rather than adding to one. A
+digit picks a row and Enter moves on (the hint and key caps' shortcut hint are hidden without a
+keyboard); a single choice advances by itself, several choices wait for Next. The Review tab lists
+every question with its answer, each one a link back to its tab, and Submit sends them; Skip
+declines them all. Only the question scrolls, so the actions stay in view. The chain step and the
+turn footer for a pending question read "Awaiting your answer".
 
 Sending needs no separate grant. The line beneath the composer states that a message, and the OMC
 data the agent reads to answer it, go to the selected CPA model and its upstream (ADR 0027); sending
