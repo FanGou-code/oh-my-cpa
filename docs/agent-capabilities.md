@@ -136,11 +136,14 @@ secrets.
   sizes);
 - exactly one `SELECT` or `WITH` statement;
 - the compiled program is read before it runs: every table or index opened must belong to a table
-  in `QUERY_READABLE_TABLES`, no column in that table's redacted list may be read, and write
-  opcodes, virtual tables (so `json_each` and `pragma_*`) and databases other than `main` are
-  refused;
-- at most 200 rows, 24 KiB, 500 characters per cell and 5 seconds; credential-shaped text is
-  replaced and email addresses are masked.
+  in `QUERY_READABLE_TABLES`, no column in that table's redacted list may be read, no index
+  covering a redacted column may be opened, and writes to stored tables, virtual tables (so
+  `json_each` and `pragma_*`) and databases other than `main` are refused; SQLite's scratch
+  b-trees (`ORDER BY ... LIMIT`, `UNION`, `DISTINCT`, recursive CTEs) stay usable;
+- at most 200 rows, 24 KiB, 500 characters per cell and 5 seconds; credential-shaped text, URL
+  userinfo and email addresses are masked in cells and error messages. Masking is best-effort (a
+  value transformed in SQL passes unmasked), so a secret-bearing column is redacted, not left to
+  the mask.
 
 A refusal or an SQL error is an `error` result whose `detail` names what to change. Every table
 must be classified: readable in `QUERY_READABLE_TABLES` or hidden in `QUERY_HIDDEN_TABLES` with a
