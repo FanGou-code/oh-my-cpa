@@ -188,4 +188,14 @@ export async function playgroundNarrow({ base, page, check }) {
   const geometry = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth, body: document.body.scrollHeight, height: innerHeight,
     page: document.querySelector('[data-testid="playground-page"]').getBoundingClientRect().bottom }));
   check('playground fits a 320px phone and keeps its composer inside the viewport', geometry.scroll <= geometry.width && geometry.page <= geometry.height + 1, JSON.stringify(geometry));
+  // One line with send beside it: on a phone the keyboard takes half the screen, and a two-line box
+  // with a separate send row left the conversation a strip between them.
+  // The placeholder alone may wrap at 320px, and autosize measures it, so the height bound allows
+  // two lines; the claim that matters is that no separate send row exists.
+  const composer = await page.evaluate(() => {
+    const sender = document.querySelector('[data-testid="playground-page"] .ant-sender');
+    const send = sender.querySelector('.ant-sender-content button');
+    return { height: sender.getBoundingClientRect().height, hasFootRow: !!sender.querySelector('.ant-sender-footer'), isSendInline: !!send };
+  });
+  check('the playground composer has send beside the input and no separate row on a phone', !composer.hasFootRow && composer.isSendInline && composer.height <= 72, JSON.stringify(composer));
 }

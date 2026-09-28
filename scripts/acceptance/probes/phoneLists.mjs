@@ -180,7 +180,12 @@ export async function phoneListRendering({ base, page, check }) {
     // And the page itself does not scroll sideways, which is the user-visible symptom of any
     // element the row left hanging: a page that scrolls horizontally on a phone is one the
     // reader keeps losing their place in.
-    const overflow = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
+    // The console scrolls inside its content pane, not the document, so the pane is measured as
+    // well: a toolbar wider than the pane made it swipe sideways while the document stayed put.
+    const overflow = await page.evaluate(`Math.max(
+      document.documentElement.scrollWidth - window.innerWidth,
+      (() => { const pane = document.querySelector('.app-content'); return pane ? pane.scrollWidth - pane.clientWidth : 0; })()
+    )`);
     check(`${surface.id}: the page does not scroll sideways on a phone`, overflow <= 0, `overflow=${overflow}px`);
 
     // ---- the same surface on a pointer-fine viewport ----

@@ -989,6 +989,18 @@ turn runs the send button becomes a stop button. Beneath the composer one line s
 the operator is about to cross: the Playground's spends the key's entitlement, the Agent's names
 what must be allowed before a message can leave.
 
+**A phone's composer starts at one line.** At the 640px phone breakpoint the box grows from one line
+to five rather than from two to ten, send sits beside the input instead of in a foot row, and the
+foot row appears only for a control that needs it (the Agent's reasoning effort); frame and note
+tighten with it. On a phone the conversation already shares its height with the keyboard, and the
+desktop layout left it a strip between two bars. A desktop keeps the two-line box.
+
+**The transcript scrolls only vertically.** Code blocks and tables scroll sideways inside their own
+frames, every other element is bounded by the column (a capability step's digest is one
+ellipsized line, never the width of its text), and the scroll box clips horizontally as a
+backstop, so a sideways swipe on a touch screen never drags the conversation. On a phone an answer
+uses the full column: Bubble List's 15% reserve beside an answer is removed below 640px.
+
 **Streaming is published on a cadence.** Both run loops coalesce deltas onto 40ms and every settled
 turn keeps its object identity, so the memoised transcript re-renders the answer that is growing
 and skips every one above it.
@@ -1426,6 +1438,16 @@ a defect: the request list carried a viewport `@media (max-width: 920px)` block 
 its container query, and it could only ever fire where the container already had (the
 container is at most `viewport − 64px`), so it was removed rather than left as an unexplained
 second breakpoint.
+
+### A page never moves sideways
+
+The console scrolls inside its content pane, and on a phone that pane scrolls vertically only.
+Content wider than a phone scrolls inside its own frame: a code block, a wide table, the token
+heatmap, and a strip of choices that cannot wrap (the price book's filters, the configuration
+page's section nav) swipes within the strip with `overscroll-behavior-x: contain`. Anything else
+is bounded by its column. A sideways swipe that moves the whole page or the whole conversation is a
+defect, and the phone-list and narrow-workspace probes measure the content pane's own
+`scrollWidth`, not only the document's.
 
 ### The phone's navigation is the rail, in a sheet
 

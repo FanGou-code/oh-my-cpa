@@ -179,8 +179,27 @@ export async function agentStream({ base, page, check }) {
 }
 
 export async function agentNarrow({ base, page, check }) {
+  // A stored turn whose call returned one long unbroken field: its digest is a single line, and
+  // that line used to size the call chain - and with it the whole transcript - so a sideways swipe
+  // on a phone dragged the conversation off the screen.
+  const longValue = 'a-value-without-any-break-'.repeat(12);
+  await page.route('**/agent/session', route => route.fulfill({ json: { id: 'agent-test-session', revision: 2, model: 'vision-alias', client_key_fingerprint: 'playground-identity', omitted: 0, turns: [
+    { id: 'turn-wide', user: 'Which provider fails most?', reply: 'Checked.', parts: [{ type: 'tool', trace_id: 'call-wide' }, { type: 'text', content: 'Checked.' }], status: 'success', started_at_ms: Date.now() - 900, ended_at_ms: Date.now(), traces: [
+      { id: 'call-wide', name: 'database_query', result: { status: 'success', data: { columns: ['provider'], rows: [[longValue]], is_truncated: false, detail: longValue } } },
+    ] },
+  ] } }));
   await page.goto(`${base}/agent`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-testid="agent-page"]').waitFor();
+  await page.getByText('Checked.', { exact: true }).waitFor();
+  // scrollWidth counts content past a clipped edge too, so this proves nothing is wider than the
+  // column rather than only that the overflow is hidden.
+  const transcript = await page.evaluate(() => {
+    const box = document.querySelector('.ant-bubble-list-scroll-box');
+    return { scroll: box.scrollWidth, client: box.clientWidth, overflowX: getComputedStyle(box).overflowX };
+  });
+  check('a long call digest does not widen the transcript on a phone', transcript.scroll <= transcript.client && transcript.overflowX === 'hidden', JSON.stringify(transcript));
+  const composer = await page.locator('[data-testid="agent-page"] .ant-sender').boundingBox();
+  check('the Agent composer starts compact on a phone', composer.height <= 90, `height=${composer.height}`);
   // On a phone the target stays in the head rather than behind a settings sheet: which model a
   // message will reach is never one tap away.
   check('Agent keeps its key and model selectors visible on a phone', await page.getByLabel('Model', { exact: true }).isVisible() && await page.getByLabel('Client key', { exact: true }).isVisible());

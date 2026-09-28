@@ -134,7 +134,11 @@
   min-height: 0;
 }
 
+/* The transcript scrolls vertically only. A code block or a table scrolls sideways inside its own
+   frame; if anything else ever outgrows the column, it is clipped rather than letting a sideways
+   swipe drag the whole conversation off the screen on a touch device. */
 .transcript :global(.ant-bubble-list-scroll-box) {
+  overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
@@ -892,6 +896,36 @@
   white-space: nowrap;
 }
 
+/* A phone's composer: one line to start with send beside it (see Composer), and tighter frame and
+   note, because on a phone the keyboard already takes half the height the conversation has. */
+.is-phone.composer {
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+
+.is-phone .sender :global(.ant-sender-content) {
+  align-items: flex-end;
+  padding: 6px 6px 6px 12px;
+}
+
+.is-phone .sender :global(textarea) {
+  line-height: 1.5;
+}
+
+.is-phone .sender :global(.ant-sender-footer) {
+  padding: 0 8px 4px;
+}
+
+.is-phone .composer-foot {
+  min-height: 28px;
+}
+
+.is-phone .composer-note {
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 /* ── narrow & touch ────────────────────────────────────────────────────────── */
 
 @media (hover: none) {
@@ -948,6 +982,12 @@
 
   .transcript :global(.ant-bubble-end .ant-bubble-body) {
     max-width: 88%;
+  }
+
+  /* Bubble List keeps 15% of the row free beside an answer, which on a phone is a fifth of the
+     screen that a code block or a table then has to scroll for. */
+  .transcript :global(.ant-bubble.ant-bubble-start:not(.ant-bubble-divider):not(.ant-bubble-system)) {
+    padding-inline-end: 0;
   }
 }
 

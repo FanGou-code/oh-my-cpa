@@ -1,10 +1,15 @@
 import React from 'react';
 import { Button, Tooltip } from 'antd';
+import type { ButtonProps } from 'antd';
 import { Sender } from '@ant-design/x';
 import { clsx } from 'clsx';
 import type { SenderProps } from '@ant-design/x';
+import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import { ArrowUpOutlined } from '../icons';
 import styles from './Workspace.module.css';
+
+const DESKTOP_ROWS = { minRows: 2, maxRows: 10 };
+const PHONE_ROWS = { minRows: 1, maxRows: 5 };
 
 export interface ComposerHandle {
   focus: () => void;
@@ -71,6 +76,7 @@ export const Composer = React.forwardRef<ComposerHandle, ComposerProps>(function
   onPasteFile,
 }, ref) {
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const isPhone = useIsPhoneViewport();
   React.useImperativeHandle(ref, () => ({
     focus: () => containerRef.current?.querySelector('textarea')?.focus(),
   }), []);
@@ -94,33 +100,42 @@ export const Composer = React.forwardRef<ComposerHandle, ComposerProps>(function
     return false;
   };
 
-  const footer: SenderProps['footer'] = (_, { components: { SendButton } }) => (
-    <div className={styles['composer-foot']}>
-      <div className={styles['composer-foot-start']}>{footerStart}</div>
-      {isRunning ? (
-        <Tooltip title={stopLabel}>
-          <Button className={styles['stop-button']} aria-label={stopLabel} onClick={onStop} icon={<span className={styles['stop-glyph']} aria-hidden="true" />} />
-        </Tooltip>
-      ) : (
-        <Tooltip title={canSend ? sendLabel : blockedReason}>
-          <SendButton
-            type="primary"
-            shape="default"
-            className={clsx(styles['send-button'], isSendLabelled && styles['is-labelled'])}
-            aria-label={sendLabel}
-            icon={<ArrowUpOutlined />}
-            disabled={!canSend}
-            onClick={submit}
-          >
-            {isSendLabelled ? sendLabel : null}
-          </SendButton>
-        </Tooltip>
-      )}
-    </div>
-  );
+  const sendControl = (SendButton: React.ComponentType<ButtonProps>) => (isRunning ? (
+    <Tooltip title={stopLabel}>
+      <Button className={styles['stop-button']} aria-label={stopLabel} onClick={onStop} icon={<span className={styles['stop-glyph']} aria-hidden="true" />} />
+    </Tooltip>
+  ) : (
+    <Tooltip title={canSend ? sendLabel : blockedReason}>
+      <SendButton
+        type="primary"
+        shape="default"
+        className={clsx(styles['send-button'], isSendLabelled && styles['is-labelled'])}
+        aria-label={sendLabel}
+        icon={<ArrowUpOutlined />}
+        disabled={!canSend}
+        onClick={submit}
+      >
+        {isSendLabelled ? sendLabel : null}
+      </SendButton>
+    </Tooltip>
+  ));
+
+  // On a phone the conversation is most of the screen and the keyboard takes half of what is
+  // left, so the box starts at one line with send beside it, and a foot row exists only when there
+  // is a control to put in it. A desktop keeps the two-line box with send in its foot, where a
+  // longer prompt is expected and height is not what runs out.
+  const footer: SenderProps['footer'] = isPhone
+    ? (footerStart ? <div className={styles['composer-foot']}><div className={styles['composer-foot-start']}>{footerStart}</div></div> : false)
+    : (_, { components: { SendButton } }) => (
+      <div className={styles['composer-foot']}>
+        <div className={styles['composer-foot-start']}>{footerStart}</div>
+        {sendControl(SendButton)}
+      </div>
+    );
+  const suffix: SenderProps['suffix'] = isPhone ? (_, { components: { SendButton } }) => sendControl(SendButton) : false;
 
   return (
-    <div className={styles['composer']} ref={containerRef}>
+    <div className={clsx(styles['composer'], isPhone && styles['is-phone'])} ref={containerRef}>
       <Sender
         className={styles['sender']}
         value={value}
@@ -131,10 +146,10 @@ export const Composer = React.forwardRef<ComposerHandle, ComposerProps>(function
         disabled={isDisabled}
         placeholder={placeholder}
         submitType="enter"
-        autoSize={{ minRows: 2, maxRows: 10 }}
+        autoSize={isPhone ? PHONE_ROWS : DESKTOP_ROWS}
         header={header || false}
         footer={footer}
-        suffix={false}
+        suffix={suffix}
         onPasteFile={onPasteFile}
       />
       {note && <p className={styles['composer-note']}>{note}</p>}
