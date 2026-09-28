@@ -15,17 +15,18 @@ import (
 type generationGateway struct {
 	mu       sync.Mutex
 	hasV8    bool
-	probeErr int // status the probe answers when non-zero
+	disabled bool // no management secret: every management path answers 404
+	probeErr int  // status the probe answers when non-zero
 	paths    []string
 }
 
 func (g *generationGateway) serve(writer http.ResponseWriter, request *http.Request) {
 	g.mu.Lock()
 	g.paths = append(g.paths, request.Method+" "+request.URL.Path)
-	hasV8, probeErr := g.hasV8, g.probeErr
+	hasV8, disabled, probeErr := g.hasV8, g.disabled, g.probeErr
 	g.mu.Unlock()
 	writer.Header().Set("Content-Type", "application/json")
-	if strings.HasPrefix(request.URL.Path, "/v8/") && !hasV8 {
+	if disabled || strings.HasPrefix(request.URL.Path, "/v8/") && !hasV8 {
 		http.NotFound(writer, request)
 		return
 	}
@@ -36,6 +37,8 @@ func (g *generationGateway) serve(writer http.ResponseWriter, request *http.Requ
 			return
 		}
 		_, _ = writer.Write([]byte("8"))
+	case "/v0/management/debug":
+		_, _ = writer.Write([]byte(`{"debug":false}`))
 	case "/v8/management/observability/usage/queue":
 		_, _ = writer.Write([]byte(`[{"model":"gpt"}]`))
 	case "/v0/management/usage-queue", "/v0/management/api-keys":
@@ -108,8 +111,49 @@ func TestPreV8GatewayIsRefusedBeforeAnyRequest(t *testing.T) {
 	if status := client.ManagementAPI(context.Background()); status != ManagementAPIUnsupported {
 		t.Fatalf("ManagementAPI = %s", status)
 	}
-	if seen := gateway.seen(); len(seen) != 1 || seen[0] != "GET /v8/management/config/config-version" {
-		t.Fatalf("only the probe may reach a pre-v8 gateway, got %v", seen)
+	want := "GET /v8/management/config/config-version|GET /v0/management/debug"
+	if seen := strings.Join(gateway.seen(), "|"); seen != want {
+		t.Fatalf("only the probes may reach a pre-v8 gateway, got %v", seen)
+	}
+}
+
+// A gateway with no management secret answers 404 on both trees. That is not a
+// pre-v8 gateway, so it must not be reported as one needing an upgrade.
+func TestGatewayWithoutManagementIsNotReportedAsPreV8(t *testing.T) {
+	gateway := &generationGateway{hasV8: true, disabled: true}
+	client := newGenerationClient(t, gateway)
+
+	if status := client.ManagementAPI(context.Background()); status != ManagementAPIDisabled {
+		t.Fatalf("ManagementAPI = %s, want disabled", status)
+	}
+	if _, _, err := client.UsageQueue(context.Background(), 1); !errors.Is(err, ErrManagementDisabled) {
+		t.Fatalf("UsageQueue err = %v, want ErrManagementDisabled", err)
+	}
+	want := "GET /v8/management/config/config-version|GET /v0/management/debug"
+	if seen := strings.Join(gateway.seen(), "|"); seen != want {
+		t.Fatalf("only the probes may reach a gateway without management, got %v", seen)
+	}
+}
+
+// While the probe gets no answer, gated requests go straight through instead of
+// each paying another probe first; the health status keeps re-asking.
+func TestUndecidedProbeIsNotRepeatedPerRequest(t *testing.T) {
+	gateway := &generationGateway{hasV8: true, probeErr: http.StatusServiceUnavailable}
+	client := newGenerationClient(t, gateway)
+
+	for range 3 {
+		if _, _, err := client.UsageQueue(context.Background(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count := strings.Count(strings.Join(gateway.seen(), "|"), "config-version"); count != 1 {
+		t.Fatalf("gated requests re-probed an undecided gateway: %v", gateway.seen())
+	}
+	gateway.mu.Lock()
+	gateway.probeErr = 0
+	gateway.mu.Unlock()
+	if status := client.ManagementAPI(context.Background()); status != ManagementAPIV8 {
+		t.Fatalf("the health status must re-probe inside the undecided window, got %s", status)
 	}
 }
 

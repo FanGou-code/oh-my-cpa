@@ -1,6 +1,19 @@
 import http from 'node:http';
 import { parse as parseYaml } from 'yaml';
 
+// The endpoints the client addresses on /v0/management; every other one lives
+// under /v8/management only.
+const V0_ENDPOINTS = new Set([
+  '/config', '/config.yaml', '/api-keys', '/openai-compatibility', '/oauth-model-alias', '/oauth-excluded-models',
+  '/debug', '/proxy-url', '/request-log', '/logging-to-file', '/usage-statistics-enabled', '/request-retry',
+  '/max-retry-interval', '/max-retry-credentials', '/ws-auth', '/force-model-prefix', '/routing/strategy',
+  '/logs-max-total-size-mb', '/error-logs-max-files',
+]);
+
+function isV0Endpoint(path) {
+  return V0_ENDPOINTS.has(path) || /^\/[a-z0-9-]+-api-key$/.test(path) || /^\/plugins\/[^/]+\/(enabled|config)$/.test(path);
+}
+
 export const FAKE_CPA_MANAGEMENT_KEY = 'omc-e2e-management-key';
 export const FAKE_PROVIDER_SECRET = 'omc-e2e-provider-secret';
 // FAKE_SECOND_PROVIDER_SECRET belongs to the second codex entry. Providers are
@@ -224,11 +237,17 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
     }
     // A v8 gateway: operations live under /v8/management, and /v0/management answers
     // only the reads and configuration writes the client still sends there
-    // (internal/cpa/management/client_v0.go). An operation sent to its retired v0 path
-    // therefore finds no route, as it would find nothing the client should call.
+    // (internal/cpa/management/client_v0.go). A request sent to the other generation
+    // finds no route, so a call moved to the wrong tree fails the suites instead of
+    // passing against a handler shared by both.
     const path = url.pathname.replace(/^\/v[08]\/management/, '');
     if (request.method === 'GET' && url.pathname === '/v8/management/config/config-version') {
       json(response, 200, 8);
+      return;
+    }
+    const isV0Request = url.pathname.startsWith('/v0/management/');
+    if ((!isV0Request && !url.pathname.startsWith('/v8/management/')) || isV0Request !== isV0Endpoint(path)) {
+      json(response, 404, { error: 'not found' });
       return;
     }
 

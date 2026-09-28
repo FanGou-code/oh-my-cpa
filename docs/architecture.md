@@ -332,14 +332,19 @@ Oh My CPA requires CPA v8.0.0 or later (ADR 0034, superseding ADR 0028; the mapp
 measurements are in `docs/cpa-v8-compat.md`). The management client addresses
 `/v8/management` for every operation. Whether a gateway serves it is observed, never
 inferred from a version string: `Client.SupportsManagementV8` reads
-`/v8/management/config/config-version` and requires the value `8`. The answer is cached
-per base URL (`API_SUPPORT_TTL` for v8, the shorter `API_UNSUPPORTED_TTL` otherwise) and
-dropped when a v8 route answers "missing". Every request passes that gate
+`/v8/management/config/config-version` and requires the value `8`; when that route is
+missing, `/v0/management/debug` tells an older gateway (`unsupported`) from one whose
+Management API is disabled because it has no management secret (`disabled`). The answer
+is cached per base URL (`API_SUPPORT_TTL` for v8, the shorter `API_UNSUPPORTED_TTL`
+otherwise) and dropped when a v8 route answers "missing"; a probe with no answer stops
+the gate re-probing for `API_UNDECIDED_TTL`. Every request passes that gate
 (`requireManagementV8` in `internal/cpa/management/v8_gate.go`): against a gateway that
 answered "not v8" it returns `ErrManagementV8Required` without sending anything, which
-the API layer reports as `cpa_v8_required`. `/api/healthz` carries the gate's answer as
-`cpa_management_api`, and the console shell replaces every page with upgrade guidance
-while it reads `unsupported`.
+the API layer reports as `cpa_v8_required`, and against a `disabled` one
+`ErrManagementDisabled` (`cpa_management_disabled`). `/api/healthz` carries the gate's
+answer as `cpa_management_api`, and the console shell replaces every page with upgrade
+guidance while it reads `unsupported` (`CpaUpgradeRequired`), or with the
+management-secret setting while it reads `disabled` (`CpaManagementDisabled`).
 
 `/v0/management` is addressed only through `internal/cpa/management/client_v0.go`: the
 per-family credential lists, which alone carry each upstream key's `auth-index`, and the

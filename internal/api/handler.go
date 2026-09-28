@@ -475,9 +475,10 @@ func (h *Handler) healthz(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	cpaConnected := false
-	// The management API generation is reported beside connectivity because the
-	// console blocks itself on "unsupported": a gateway older than CPA v8 is
-	// reachable but cannot serve any page.
+	// The management API state is reported beside connectivity because the
+	// console blocks itself on "unsupported" and "disabled": a gateway older than
+	// CPA v8, or one without a management secret, is reachable but cannot serve
+	// any page.
 	cpaManagementAPI := management.ManagementAPIUnknown
 	if instance, err := h.repo.GetInstance(request.Context(), defaultInstanceID()); err == nil {
 		client, clientErr := h.clientForInstance(request.Context(), instance)

@@ -25,10 +25,16 @@ shared OAuth login endpoint, which the console can build on directly.
 1. **CPA v8.0.0 or later is required.** The management client decides the API generation
    by reading `/v8/management/config/config-version` and requiring the value `8`, as
    before, but now as a gate: against a gateway that answers "not v8", every operation
-   returns `management.ErrManagementV8Required` before any request is sent. `/api/healthz`
-   reports `cpa_management_api` (`v8`, `unsupported`, `unknown`), and the console replaces
-   every page with upgrade guidance while it reads `unsupported`. An undecided probe
-   (unreachable, 401, 5xx) blocks nothing, so the request fails with its own cause.
+   returns `management.ErrManagementV8Required` before any request is sent. CPA answers 404
+   on every management path, v0 and v8 alike, while it has no management secret, so a
+   missing v8 tree is confirmed against `/v0/management/debug`: when that is missing too,
+   the gateway's Management API is disabled rather than old, and operations return
+   `management.ErrManagementDisabled` instead. `/api/healthz` reports
+   `cpa_management_api` (`v8`, `unsupported`, `disabled`, `unknown`), and the console
+   replaces every page with upgrade guidance while it reads `unsupported`, or with the
+   management-secret setting while it reads `disabled`. An undecided probe (unreachable,
+   401, 5xx) blocks nothing, so the request fails with its own cause, and the gate does
+   not probe again for `API_UNDECIDED_TTL`.
 2. **Operations use the v8 routes only.** Credentials, OAuth, plugins, logs, usage,
    authenticated upstream calls, cooldown reset and release lookup are addressed at their
    `/v8/management` path. There is no fallback and no second route table.
@@ -40,7 +46,9 @@ shared OAuth login endpoint, which the console can build on directly.
 4. **Configuration moves to the v8 configuration API.** The editors adopt v8 paths and
    write through `/v8/management/config` rather than replacing the whole YAML file. A v8
    configuration write migrates a legacy file; that migration is accepted, and OMC keeps
-   a copy of the file as it was before its first v8 write.
+   a copy of the file as it was before its first v8 write. This is the target, not what
+   this decision ships: until the editors move, OMC performs no v8 configuration write and
+   the backup is not implemented.
 
 ## Consequences
 

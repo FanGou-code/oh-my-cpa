@@ -170,7 +170,6 @@ func postJSON(t *testing.T, client *http.Client, url string) (*http.Response, []
 	return response, payload
 }
 
-
 // newFakeCPA starts a stand-in v8 gateway: it answers the gate's probe itself,
 // so the handler sees only the operations its test is about.
 func newFakeCPA(handler http.Handler) *httptest.Server {

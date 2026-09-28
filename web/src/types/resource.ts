@@ -75,7 +75,7 @@ export interface HealthStatus {
   uptime_seconds?: number;
   cpa_connected?: boolean;
   /** 'unsupported' means the gateway is older than CPA v8, which the console requires. */
-  cpa_management_api?: 'v8' | 'unsupported' | 'unknown';
+  cpa_management_api?: 'v8' | 'unsupported' | 'disabled' | 'unknown';
   cpa_base_url?: string;
   database_status?: string;
 }

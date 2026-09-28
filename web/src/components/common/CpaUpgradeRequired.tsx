@@ -20,14 +20,14 @@ export const CpaUpgradeRequired: React.FC = () => {
   const t = useT();
   const command = `CPA_IMAGE=${CPA_UPGRADE_IMAGE} docker compose -f deploy/compose.full.yml up -d cpa`;
   return (
-    <div className="cpa-upgrade-required" data-cpa-upgrade-required>
+    <div className="cpa-blocked" data-cpa-upgrade-required>
       <Result
         status="warning"
         icon={<WarningOutlined />}
         title={t('shell.cpa_v8_required_title')}
         subTitle={t('shell.cpa_v8_required_desc')}
         extra={(
-          <div className="cpa-upgrade-required-steps">
+          <div className="cpa-blocked-steps">
             <Typography.Paragraph>{t('shell.cpa_v8_required_compose')}</Typography.Paragraph>
             <CodeFrame code={command} label="shell" />
             <Typography.Paragraph type="secondary">{t('shell.cpa_v8_required_config')}</Typography.Paragraph>

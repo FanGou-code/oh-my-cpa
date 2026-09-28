@@ -27,6 +27,7 @@ import { useOverlayHistory } from '../../hooks/useOverlayHistory';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { DataProgress } from './DataProgress';
 import { CpaUpgradeRequired } from './CpaUpgradeRequired';
+import { CpaManagementDisabled } from './CpaManagementDisabled';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BrandArtwork } from './BrandArtwork';
@@ -228,8 +229,11 @@ export const AppLayout: React.FC = () => {
   }, [isMobile, isCollapsed]);
 
   const isCpaUnsupported = health?.cpa_management_api === 'unsupported';
+  const isCpaManagementDisabled = health?.cpa_management_api === 'disabled';
   const cpaState = health
-    ? (isCpaUnsupported ? t('shell.cpa_unsupported') : health.cpa_connected ? t('shell.connected') : t('shell.offline'))
+    ? (isCpaUnsupported ? t('shell.cpa_unsupported')
+      : isCpaManagementDisabled ? t('shell.cpa_management_disabled')
+        : health.cpa_connected ? t('shell.connected') : t('shell.offline'))
     : '—';
 
   /**
@@ -335,8 +339,10 @@ export const AppLayout: React.FC = () => {
               swapping, and the scroll position resets with the new page. */}
           <div key={location.pathname} className={`route-transition${WORKSPACE_ROUTES.has(location.pathname) ? ' workspace-route' : ''}`}>
             <React.Suspense fallback={<div style={{ padding: 60, textAlign: 'center' }}><Spin size="large" /></div>}>
-              {health?.cpa_management_api === 'unsupported' ? (
+              {isCpaUnsupported ? (
                 <CpaUpgradeRequired />
+              ) : isCpaManagementDisabled ? (
+                <CpaManagementDisabled />
               ) : (
                 <PricingEditorProvider>
                   <Outlet />

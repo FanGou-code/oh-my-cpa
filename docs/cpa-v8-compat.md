@@ -330,17 +330,22 @@ kept the legacy layout (no `config-version`, legacy keys edited in place, all ef
 Two independent facts, both observed rather than inferred from a version string:
 
 - **Management API generation** (the gate): `GET /v8/management/config/config-version`
-  must answer the value `8`. A 404/405/501, or a 2xx with any other body, means the
-  gateway is older than v8; the body is checked so a catch-all proxy cannot pass. Any
-  other status is not an answer and is not remembered. A v8 answer is cached per gateway
+  must answer the value `8`. A 2xx with any other body means the gateway is older than
+  v8; the body is checked so a catch-all proxy cannot pass. A 404/405/501 means the same
+  unless `GET /v0/management/debug` is missing too: CPA answers 404 on every management
+  path while it has no management secret, so that gateway is reported as `disabled`
+  rather than old. Any other status is not an answer and is not remembered; the gate then
+  lets requests through without probing again for fifteen seconds (`API_UNDECIDED_TTL`),
+  while `/api/healthz` keeps re-asking. A v8 answer is cached per gateway
   base URL for five minutes (`API_SUPPORT_TTL`), a "not v8" answer for fifteen seconds
   (`API_UNSUPPORTED_TTL`, so an upgrade lifts the block quickly), and the cache is dropped
   whenever a v8 route answers "missing" (`internal/cpa/management/v8_gate.go`). Against a
   gateway that answered "not v8", every client operation returns
   `ErrManagementV8Required` without sending a request; the API layer reports it as
   `cpa_v8_required`, `/api/healthz` reports `cpa_management_api: unsupported`, and the
-  console shows upgrade guidance in place of every page. An undecided probe blocks
-  nothing. The configuration read still reports `layout.management_api` (`v8` or
+  console shows upgrade guidance in place of every page. Against a `disabled` gateway it
+  returns `ErrManagementDisabled` (`cpa_management_disabled`), and the console shows the
+  management-secret setting instead. An undecided probe blocks nothing. The configuration read still reports `layout.management_api` (`v8` or
   `unknown`).
 - **Configuration layout** of the stored file (`configyaml.DetectLayout`): `v8` when it
   has v8 sections (`config-version`, a v8-only root section, a root `api-keys` mapping,
