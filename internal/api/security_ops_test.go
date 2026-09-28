@@ -156,7 +156,28 @@ func TestAuditEventsEndpoints(t *testing.T) {
 		t.Errorf("expected at least 1 audit event, got %d", len(listData.Events))
 	}
 
-	// 2. Export audit events
+	// 2. Summarize them. The search narrows the matrix to the fixture row; the outcome filter
+	// is ignored, because each facet's counts must hold the other facet's selection.
+	summaryResp, err := cli.Get(ts.URL + "/omc/api/v1/management/audit/summary?outcome=unfinished&q=config.test")
+	if err != nil || summaryResp.StatusCode != http.StatusOK {
+		t.Fatalf("summarize audit events failed: %v, status: %d", err, summaryResp.StatusCode)
+	}
+	var summaryData struct {
+		Buckets []map[string]any `json:"buckets"`
+	}
+	_ = json.NewDecoder(summaryResp.Body).Decode(&summaryData)
+	summaryResp.Body.Close()
+	wantBucket := map[string]any{"prefix": "config", "outcome": "succeeded", "count": float64(1)}
+	if len(summaryData.Buckets) != 1 || fmt.Sprint(summaryData.Buckets[0]) != fmt.Sprint(wantBucket) {
+		t.Errorf("summary buckets = %v, want exactly %v", summaryData.Buckets, wantBucket)
+	}
+	badResp, err := cli.Get(ts.URL + "/omc/api/v1/management/audit/summary?outcome=sideways")
+	if err != nil || badResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown outcome status = %v, %v; want 400", badResp.StatusCode, err)
+	}
+	badResp.Body.Close()
+
+	// 3. Export audit events
 	exportResp, err := cli.Get(ts.URL + "/omc/api/v1/management/audit/export")
 	if err != nil || exportResp.StatusCode != http.StatusOK {
 		t.Fatalf("export audit events failed: %v, status: %d", err, exportResp.StatusCode)
