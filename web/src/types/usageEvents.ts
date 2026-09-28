@@ -1,3 +1,5 @@
+import type { RequestCostBreakdown } from './pricing';
+
 /**
  * Request-record types shared by the dashboard drill-down, the event table and
  * every later analytics page. The filter vocabulary matches the server's
@@ -101,6 +103,8 @@ export interface UsageEventRelatedError {
   timestamp_ms: number;
 }
 
+export type UsageEventDetailSection = 'related_errors' | 'cost_breakdown';
+
 export interface UsageEventDetail {
   event: UsageEvent & {
     endpoint?: string;
@@ -108,7 +112,10 @@ export interface UsageEventDetail {
     x_forwarded_for?: string | null;
   };
   related_errors?: UsageEventRelatedError[];
-  partial_errors?: string[];
+  /** Sections the server could not load: `related_errors`, `cost_breakdown`. */
+  partial_errors?: UsageEventDetailSection[];
+  /** Why the stored cost is what it is; absent when the server could not load it. */
+  cost_breakdown?: RequestCostBreakdown;
 }
 
 export interface UsageFacetValue {

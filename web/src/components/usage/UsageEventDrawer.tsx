@@ -29,6 +29,7 @@ import {
 } from '../../types/usageEventMetrics';
 import { requestGroupName } from '../../types/usageEventLabels';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory';
+import { CostBreakdownView } from '../pricing/CostBreakdownView';
 
 export interface UsageEventDrawerProps {
   eventId: number | null;
@@ -84,6 +85,7 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
     ? [[t('events.provider_key'), providerKeyMask]]
     : [];
   const errors = result.data?.related_errors || [];
+  const isRelatedErrorsPartial = !!result.data?.partial_errors?.includes('related_errors');
   const missing = <span className="terminal-muted">{t('events.not_captured')}</span>;
   const value = (text: string | null | undefined) => text || missing;
   const fields = (items: Array<[string, React.ReactNode]>) => (
@@ -486,19 +488,8 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
                       ]),
                     )}
                     {section(
-                      t('events.col_cost'),
-                      fields([
-                        [
-                          t('events.col_cost'),
-                          event.cost_usd != null ? (
-                            <strong style={{ color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
-                              ${event.cost_usd.toFixed(6)}
-                            </strong>
-                          ) : (
-                            <span className="terminal-muted">{t('events.cost_unpriced')}</span>
-                          ),
-                        ],
-                      ]),
+                      t('cost.title'),
+                      <CostBreakdownView breakdown={result.data?.cost_breakdown} model={event.model} costUsd={event.cost_usd} />,
                     )}
                     <p className="request-detail-note">{t('events.token_note')}</p>
                   </>
@@ -521,13 +512,8 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
                       t('events.correlated_errors'),
                       <>
                         <p className="request-detail-note">{t('events.correlation_note')}</p>
-                        {!!result.data?.partial_errors?.length && (
-                          <Alert
-                            type="warning"
-                            showIcon
-                            title={t('events.partial_errors')}
-                            description={result.data.partial_errors.join(' · ')}
-                          />
+                        {isRelatedErrorsPartial && (
+                          <Alert type="warning" showIcon title={t('events.partial_errors')} />
                         )}
                         {errors.length
                           ? errors.map((error) => (
@@ -555,7 +541,7 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
                                 {error.body && <pre>{error.body}</pre>}
                               </article>
                             ))
-                          : !result.data?.partial_errors?.length && (
+                          : !isRelatedErrorsPartial && (
                               <Empty
                                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                                 description={t('events.no_correlated_errors')}
