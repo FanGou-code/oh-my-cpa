@@ -128,7 +128,8 @@ secrets.
 ### Read-only database queries
 
 `database_schema` lists what `database_query` may read, and `database_query` runs one SQLite
-`SELECT` against OMC's own database (ADR 0035). The policy lives in
+`SELECT` against OMC's own database (ADR 0035). Both are offered to the built-in Agent only
+(`Adapters: ["agent"]`); MCP clients do not see them. The policy lives in
 `internal/repository/readonly_query.go`, not in the capability:
 
 - a separate read-only connection (`mode=ro`, `query_only`, no attached databases, bounded value
@@ -215,6 +216,10 @@ The subcommand runs before configuration, database, and CPA client initializatio
 the bridge process opens no data directory and holds no CPA credential of its own. It
 authenticates to the capability endpoints with the management key as a bearer token;
 non-loopback URLs must be HTTPS, redirects are refused, and responses are bounded.
+
+MCP clients see every capability declared with the `mcp` adapter. `ask_question` (an MCP
+client has its own way to ask its user) and the read-only database queries are offered to
+the built-in Agent only.
 
 Because the management key is administrator-equivalent, an external process holding it
 can also log in to the console. Use MCP only with agents and hosts you would trust with

@@ -40,8 +40,10 @@ Tables are opt-in. Every table is either readable (with its redacted columns nam
 a recorded reason, and a test fails when a migration adds a table that is neither, so a new table
 is never readable by default.
 
-Both capabilities are exposed to the built-in Agent and to MCP clients, whose management key is
-already administrator-equivalent.
+Both capabilities are offered to the built-in Agent only. An MCP client holds an
+administrator-equivalent key, but it runs outside OMC, on a host and a model the operator did not
+choose on the Agent page, and free-form SQL reaches more of OMC's records in one call than any
+declared read. MCP clients keep the declared reads.
 
 ## Consequences
 

@@ -42,4 +42,14 @@ func TestDatabaseQueryCapabilityReportsWhyItRefused(t *testing.T) {
 	if err != nil || result.Status != "success" {
 		t.Fatalf("schema: %+v %v", result, err)
 	}
+
+	external := capability.Principal{ID: "mcp-client", Adapter: "mcp", IsAdmin: true}
+	for _, name := range []string{"database_schema", "database_query"} {
+		if _, err := registry.Lookup(name, capability.Principal{ID: "mcp-client", Adapter: "mcp", IsAdmin: true, Allowed: map[string]bool{name: true}}); err == nil {
+			t.Fatalf("%s is offered to MCP clients", name)
+		}
+	}
+	if listed := registry.List(external); len(listed) != 0 {
+		t.Fatalf("MCP clients list database capabilities: %d", len(listed))
+	}
 }
