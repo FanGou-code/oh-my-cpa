@@ -35,7 +35,11 @@ func writeCPAFacadeError(writer http.ResponseWriter, err error) {
 	code := "cpa_unavailable"
 	message := "CPA management request failed"
 	var httpErr *management.HTTPError
-	if errors.As(err, &httpErr) {
+	if errors.Is(err, management.ErrManagementV8Required) {
+		status = http.StatusBadGateway
+		code = "cpa_v8_required"
+		message = "CPA does not serve the v8 Management API; upgrade CPA to v8.0.0 or later"
+	} else if errors.As(err, &httpErr) {
 		switch httpErr.StatusCode {
 		case http.StatusNotFound, http.StatusMethodNotAllowed:
 			status = http.StatusNotImplemented
@@ -63,6 +67,9 @@ func writeCPAFacadeError(writer http.ResponseWriter, err error) {
 }
 
 func publicCPAErrorMessage(err error) string {
+	if errors.Is(err, management.ErrManagementV8Required) {
+		return "CPA does not serve the v8 Management API"
+	}
 	var httpErr *management.HTTPError
 	if errors.As(err, &httpErr) {
 		if httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusMethodNotAllowed {

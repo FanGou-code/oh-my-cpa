@@ -234,6 +234,7 @@ export function isRetryableWriteFailure(err: unknown): boolean {
     case 'cpa_rejected_request':
     case 'cpa_authentication_failed':
     case 'capability_missing':
+    case 'cpa_v8_required':
       return false;
     default:
       break;
