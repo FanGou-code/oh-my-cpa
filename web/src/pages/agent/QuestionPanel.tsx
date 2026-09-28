@@ -56,47 +56,49 @@ export function QuestionPanel({ operation, onDecided }: QuestionPanelProps) {
         <QuestionCircleOutlined className={styles['question-icon']} aria-hidden="true" />
         <span>{t('agent.question.title')}</span>
       </header>
-      {questions.map((question, index) => {
-        const reply = replies[index];
-        const options = question.options ?? [];
-        const describe = (label: string, description?: string) => (
-          <span className={styles['question-option']}>
-            <span>{label}</span>
-            {description && <span className={styles['question-option-description']}>{description}</span>}
-          </span>
-        );
-        return (
-          <fieldset key={`${index}-${question.question}`} className={styles['question-item']}>
-            <legend className={styles['question-text']}>
-              {question.header && <span className={styles['question-chip']}>{question.header}</span>}
-              {question.question}
-            </legend>
-            {options.length > 0 && (question.multi_select ? (
-              <Checkbox.Group
-                className={styles['question-options']}
-                value={reply.selected}
-                onChange={values => updateReply(index, { selected: values.map(String) })}
-                options={options.map(option => ({ value: option.label, label: describe(option.label, option.description) }))}
+      <div className={styles['question-body']}>
+        {questions.map((question, index) => {
+          const reply = replies[index];
+          const options = question.options ?? [];
+          const describe = (label: string, description?: string) => (
+            <span className={styles['question-option']}>
+              <span>{label}</span>
+              {description && <span className={styles['question-option-description']}>{description}</span>}
+            </span>
+          );
+          return (
+            <fieldset key={`${index}-${question.question}`} className={styles['question-item']}>
+              <legend className={styles['question-text']}>
+                {question.header && <span className={styles['question-chip']}>{question.header}</span>}
+                {question.question}
+              </legend>
+              {options.length > 0 && (question.multi_select ? (
+                <Checkbox.Group
+                  className={styles['question-options']}
+                  value={reply.selected}
+                  onChange={values => updateReply(index, { selected: values.map(String) })}
+                  options={options.map(option => ({ value: option.label, label: describe(option.label, option.description) }))}
+                />
+              ) : (
+                <Radio.Group
+                  className={styles['question-options']}
+                  value={reply.selected[0]}
+                  onChange={event => updateReply(index, { selected: [String(event.target.value)] })}
+                  options={options.map(option => ({ value: option.label, label: describe(option.label, option.description) }))}
+                />
+              ))}
+              <Input.TextArea
+                aria-label={t(options.length > 0 ? 'agent.question.other' : 'agent.question.answer')}
+                placeholder={t(options.length > 0 ? 'agent.question.other' : 'agent.question.answer')}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                maxLength={MAX_TYPED_ANSWER_CHARS}
+                value={reply.text}
+                onChange={event => updateReply(index, { text: event.target.value })}
               />
-            ) : (
-              <Radio.Group
-                className={styles['question-options']}
-                value={reply.selected[0]}
-                onChange={event => updateReply(index, { selected: [String(event.target.value)] })}
-                options={options.map(option => ({ value: option.label, label: describe(option.label, option.description) }))}
-              />
-            ))}
-            <Input.TextArea
-              aria-label={t(options.length > 0 ? 'agent.question.other' : 'agent.question.answer')}
-              placeholder={t(options.length > 0 ? 'agent.question.other' : 'agent.question.answer')}
-              autoSize={{ minRows: 1, maxRows: 4 }}
-              maxLength={MAX_TYPED_ANSWER_CHARS}
-              value={reply.text}
-              onChange={event => updateReply(index, { text: event.target.value })}
-            />
-          </fieldset>
-        );
-      })}
+            </fieldset>
+          );
+        })}
+      </div>
       {error && (
         <div className={styles['failure']} role="alert">
           <span>{t(failureKey(error))}</span>

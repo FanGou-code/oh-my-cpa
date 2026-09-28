@@ -63,6 +63,9 @@ export interface Operation {
   result: CapabilityReceipt;
 }
 
+/** The capability the agent asks the operator through; registered by the server's agent runtime. */
+export const ASK_QUESTION = 'ask_question';
+
 /** One question the agent asks through `ask_question`, as its prepared operation carries it. */
 export interface AgentQuestion {
   question: string;
@@ -178,6 +181,16 @@ export function isKnownTurnStatus(status: string): boolean {
 export function turnLabelKey(turn: Pick<Turn, 'status' | 'code'>): string {
   if (turn.status === 'error' && turn.code === 'cancelled') return 'agent.status.stopped';
   return isKnownTurnStatus(turn.status) ? `agent.status.${turn.status}` : 'agent.status.unknown';
+}
+
+/**
+ * A turn stopped on the agent's question rather than on a change to approve. Both are stored as
+ * `pending`; the footer says which, because "awaiting approval" under a question sends the
+ * operator looking for a dialog that is not there.
+ */
+export function isAwaitingAnswer(turn: Pick<Turn, 'status' | 'traces'>): boolean {
+  return turn.status === 'pending'
+    && (turn.traces ?? []).some(trace => trace.name === ASK_QUESTION && trace.result.status === 'pending');
 }
 
 /** The tone a status earns in the console's semantic palette. */
@@ -460,10 +473,13 @@ export interface CapabilityGroup {
  * The order is fixed rather than alphabetical so the destructive set is always in the same
  * place - it is the one that needs reading before approving anything.
  */
-export function groupCapabilities(capabilities: Capability[], query: string): CapabilityGroup[] {
+export function groupCapabilities(
+  capabilities: Capability[],
+  query: string,
+  searchText: (capability: Capability) => string = capability => `${capability.name} ${capability.description}`,
+): CapabilityGroup[] {
   const needle = query.trim().toLowerCase();
-  const matched = capabilities.filter(capability =>
-    !needle || capability.name.toLowerCase().includes(needle) || capability.description.toLowerCase().includes(needle));
+  const matched = capabilities.filter(capability => !needle || searchText(capability).toLowerCase().includes(needle));
   return PERMISSION_ORDER
     .map(permission => ({ permission, items: matched.filter(item => item.permission === permission).sort((left, right) => left.name.localeCompare(right.name)) }))
     .filter(group => group.items.length > 0);

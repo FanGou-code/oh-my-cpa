@@ -388,12 +388,13 @@ the configuration workbench.
   and one line beneath naming the cost or privacy boundary.
 - **Playground panel**: Parameters (unset values read "Default"; sliders rest muted) and Turn
   diagnostics (metrics grid, request and response code blocks, labelled cURL copy).
-- **Agent**: a capability directory as an open list grouped read / write / destructive with pips;
+- **Agent**: a capability directory as an open list grouped read / write / destructive with pips,
+  each row a localized title with its mono identifier beside it;
   a turn drawn in the order it happened - reasoning, text and capability calls as segments, the calls
   of one round as an X `ThoughtChain` with warn-toned attention marks for pending or unconfirmed
   steps; an authorization dialog that opens by itself with one Deny / Allow decision (Allow in the
   danger hue for a destructive capability); agent questions in an accent-framed panel that takes
-  the composer's place; the data notice as the
+  the composer's place, options as full-width rows with the chosen one accent-edged; the data notice as the
   line beneath the composer (no consent checkbox); the reasoning effort as a quiet text button in the
   composer's foot; reasoning shown live and kept with the turn; the sent message shown at once.
 

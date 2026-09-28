@@ -194,7 +194,14 @@ When a new OMC feature suits an agent:
    `internal/mcpbridge`.
 3. Add tests for the declaration (schema and permission), the permission or confirmation
    path, and the operation itself, including a failure path.
-4. If the capability is intentionally not exposed, say so in the pull request.
+4. Give the console's capability directory its copy: `agent.capability.<name>` (a short title)
+   and `agent.capability.<name>.description` (what the call does, for the operator) in
+   `web/src/i18n/index.tsx` and every catalog under `web/src/i18n/locales/`. The registry's
+   `Description` stays English and is written for the model; the console shows it only in an
+   expanded row. `scripts/capability-copy.test.mjs` fails when a registered capability has no copy
+   or copy names a capability that is gone, reading the registry from the regenerated demonstration
+   dataset.
+5. If the capability is intentionally not exposed, say so in the pull request.
 
 ## External agents (MCP)
 

@@ -1013,7 +1013,11 @@ The panel is the capability directory: the registry itself - the same list the m
 grouped read / write / destructive in that fixed order, each group marked with a pip (`--meta`,
 `--warn`, `--danger`). It is an open list, one hairline row per capability with its description
 clamped to two lines and expanded on selection, because a card per entry made the borders louder
-than the names.
+than the names. A row reads in the console language: a localized title in `--fg`, the capability
+identifier beside it in small mono `--meta`, and a localized description; the filter matches both.
+An expanded row adds the registry's own description beneath a hairline rule, labelled as what the
+model is told, because that is the text the model decides from. A capability the console has no
+copy for reads as its identifier and registry description.
 
 **A turn is drawn in the order it happened.** A model may reason, say something, call
 capabilities, reason again and answer, so a turn is a sequence of segments - reasoning, answer text,
@@ -1024,7 +1028,7 @@ capability calls made in one model round are one X `ThoughtChain`. A turn resume
 grows in place below its earlier segments rather than appearing as a second answer, and copying the
 answer takes every text segment, without the reasoning.
 
-Each step of a chain names the capability, states its status in words, and digests its result to top-level
+Each step of a chain names the capability by its localized title with the identifier beside it, states its status in words, and digests its result to top-level
 scalars and collection sizes, with the whole document one disclosure away as a code block. The
 chain's own marks cover running, succeeded, failed and rejected; a call waiting on the operator or
 one whose outcome is partial, expired or unconfirmed carries a `--warn` attention glyph instead of
@@ -1032,7 +1036,8 @@ being drawn as loading or failed.
 
 A prepared operation is decided in an authorization dialog that opens by itself when a run stops
 for it: one decision, Deny or Allow, and deciding continues the run (ADR 0034). The dialog names
-the capability with its permission as a tag and its registry description, leads with the target,
+the capability by its localized title and identifier, with its permission as a tag and its
+localized description, leads with the target,
 and lays a form-shaped change out as label/value rows (anything deeper stays JSON). A destructive
 capability draws Allow in the danger hue and adds a "cannot be undone" line; nothing is typed to
 confirm. Private input and the OAuth hand-off appear in the dialog when the capability needs them.
@@ -1042,9 +1047,11 @@ it, and Resume remains only for a decided operation whose run could not continue
 A question the agent asks (`ask_question`) takes the composer's place instead of opening a dialog,
 because the answer above it is often what the operator reads to reply. The panel keeps the
 composer's frame with the accent hue on it; each question shows its optional short chip, its
-options as a radio or checkbox list with each option's consequence in muted text beneath its label,
-and a typed-answer field that is always present. Submit is enabled once every question has a choice
-or text; Skip declines them all. The chain step for a pending question reads "Awaiting your answer".
+options as full-width hairline rows (radio or checkbox) with each option's consequence in muted
+text beneath its label and the chosen row edged in the accent hue, and a typed-answer field that is
+always present. Only the questions scroll; Skip and Submit stay in view. Submit is enabled once
+every question has a choice or text; Skip declines them all. The chain step and the turn footer for
+a pending question read "Awaiting your answer".
 
 Sending needs no separate grant. The line beneath the composer states that a message, and the OMC
 data the agent reads to answer it, go to the selected CPA model and its upstream (ADR 0027); sending

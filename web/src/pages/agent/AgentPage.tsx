@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { BrandArtwork } from '../../components/common/BrandArtwork';
 import {
-  BarChartOutlined, CloudServerOutlined, DashboardOutlined, LayoutOutlined, MessageOutlined, ReloadOutlined, WarningOutlined,
+  BarChartOutlined, DashboardOutlined, DatabaseOutlined, LayoutOutlined, MessageOutlined, ReloadOutlined, WarningOutlined,
 } from '../../components/icons';
 import { Composer } from '../../components/workspace/Composer';
 import { ReasoningEffortPicker } from '../../components/workspace/ReasoningEffortPicker';
@@ -48,7 +48,7 @@ const EXAMPLES = [
   { key: 'agent.example.usage', icon: <BarChartOutlined aria-hidden="true" /> },
   { key: 'agent.example.failed', icon: <WarningOutlined aria-hidden="true" /> },
   { key: 'agent.example.quota', icon: <DashboardOutlined aria-hidden="true" /> },
-  { key: 'agent.example.providers', icon: <CloudServerOutlined aria-hidden="true" /> },
+  { key: 'agent.example.daily', icon: <DatabaseOutlined aria-hidden="true" /> },
 ];
 
 const BUBBLE_ROLES: BubbleListProps['role'] = {

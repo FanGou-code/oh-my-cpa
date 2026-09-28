@@ -3,6 +3,7 @@ import { Alert, Button, Input, Modal, Tag } from 'antd';
 import { CodeBlock } from '../../components/workspace/ModelMarkdown';
 import workspace from '../../components/workspace/Workspace.module.css';
 import { useI18n } from '../../i18n';
+import { capabilityDescription, capabilityTitle } from '../../i18n/capabilities';
 import { decideOperation, failureCode, startOperationOAuth } from './api';
 import { failureKey, previewEntries } from './state';
 import type { Capability, Operation } from './state';
@@ -35,6 +36,8 @@ export function AuthorizationDialog({ operation, capability, isOpen, onClose, on
   const permission = operation.permission ?? capability?.permission ?? 'write';
   const isDestructive = permission === 'destructive';
   const entries = previewEntries(operation.preview.changes);
+  const title = capabilityTitle(operation.capability, t);
+  const description = capabilityDescription(operation.capability, capability?.description ?? '', t);
   const canApprove = !pendingAction
     && (operation.human_input !== 'secret' || !!secret)
     && (operation.human_input !== 'oauth' || !!oauth);
@@ -93,10 +96,11 @@ export function AuthorizationDialog({ operation, capability, isOpen, onClose, on
       <div className={styles['authorization']} data-testid="agent-authorization">
         <p className={styles['authorization-lead']}>{t('agent.operation.lead')}</p>
         <div className={styles['operation-head']}>
+          {title !== operation.capability && <span className={styles['authorization-capability']}>{title}</span>}
           <code className={styles['operation-capability']}>{operation.capability}</code>
           <Tag color={isDestructive ? 'error' : 'warning'}>{t(`agent.permission.${permission}`)}</Tag>
         </div>
-        {capability?.description && <p className={styles['authorization-description']}>{capability.description}</p>}
+        {description && <p className={styles['authorization-description']}>{description}</p>}
         <dl className={styles['operation-fields']}>
           <div className={styles['operation-field-row']}>
             <dt>{t('agent.operation.target')}</dt>

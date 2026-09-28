@@ -8,13 +8,16 @@ import { ReasoningBlock } from '../../components/workspace/ReasoningBlock';
 import workspace from '../../components/workspace/Workspace.module.css';
 import { useI18n } from '../../i18n';
 import type { TFunc } from '../../i18n';
+import { capabilityTitle } from '../../i18n/capabilities';
 import { createVisibleClock } from '../../types/visibleClock';
 import { extractThinking } from '../playground/state';
 import {
+  ASK_QUESTION,
   failureKey,
   formatClock,
   formatDuration,
   hasRawResult,
+  isAwaitingAnswer,
   rawResultText,
   segmentParts,
   statusTone,
@@ -65,11 +68,12 @@ function traceItem(trace: Trace, t: TFunc): ThoughtChainItemType {
   const status = traceChainStatus(trace.result.status);
   const tone = statusTone(trace.result.status, trace.result.code);
   const isRawAvailable = hasRawResult(trace.result);
-  const isQuestionTrace = trace.name === 'ask_question' && trace.result.status === 'pending';
+  const isQuestionTrace = trace.name === ASK_QUESTION && trace.result.status === 'pending';
   return {
     key: trace.id,
     title: (
       <span className={styles['trace-title']} data-testid="agent-trace">
+        <span className={styles['trace-label']}>{capabilityTitle(trace.name, t)}</span>
         <code className={styles['trace-name']}>{trace.name}</code>
         <span className={styles['trace-status']} data-tone={tone}>{t(isQuestionTrace ? 'agent.status.question' : turnLabelKey({ status: trace.result.status }))}</span>
       </span>
@@ -194,7 +198,7 @@ export const TurnView = React.memo(function TurnView({ turn, live }: TurnViewPro
               : isThinking
                 ? t('pg.thinking')
                 : lastTrace && lastPart?.type === 'tool'
-                  ? t('agent.activity.called', { name: lastTrace.name })
+                  ? t('agent.activity.called', { name: capabilityTitle(lastTrace.name, t) })
                   : t('agent.activity.waiting')}
           </span>
           <span className={workspace['metric']}>{formatDuration(Math.max(0, nowMS - live.startedAtMS))}</span>
@@ -203,7 +207,7 @@ export const TurnView = React.memo(function TurnView({ turn, live }: TurnViewPro
         <div className={workspace['message-foot']}>
           <span className={workspace['status']}>
             <span className={workspace['pip']} data-tone={statusTone(turn.status, turn.code)} aria-hidden="true" />
-            {t(turnLabelKey(turn))}
+            {t(isAwaitingAnswer(turn) ? 'agent.status.question' : turnLabelKey(turn))}
           </span>
           {duration !== undefined && (
             <span className={workspace['metric']}><ClockCircleOutlined aria-hidden="true" />{formatDuration(duration)}</span>

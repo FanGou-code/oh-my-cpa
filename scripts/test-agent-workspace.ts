@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import {
   failureKey,
+  isAwaitingAnswer,
   isQuestionAnswered,
   operationQuestions,
   pendingOperationID,
@@ -123,6 +124,13 @@ check('a directory query matches names and descriptions', () => {
   assert.deepEqual(groupCapabilities(items, 'nothing').length, 0);
 });
 
+check('a directory query can match the text the operator reads', () => {
+  const items = [capability('providers_list', 'read', 'List providers'), capability('keys_list', 'read', 'List keys')];
+  const localized: Record<string, string> = { providers_list: '列出提供方', keys_list: '列出客户端密钥' };
+  const groups = groupCapabilities(items, '密钥', item => `${item.name} ${localized[item.name]}`);
+  assert.deepEqual(groups.flatMap(group => group.items.map(item => item.name)), ['keys_list']);
+});
+
 check('a stream frame this build cannot render is refused rather than dispatched', () => {
   assert.equal(parseRunEvent(JSON.stringify({ type: 'delta', content: 'a' }))?.content, 'a');
   assert.equal(parseRunEvent(JSON.stringify({ type: 'telemetry' })), undefined);
@@ -140,6 +148,14 @@ check('the operation a conversation waits on is the pending call of its last tur
   // A finished turn is not waiting, whatever an old trace in it still says.
   assert.equal(pendingOperationID(conversation([waiting, turn({ id: 'c' })])), '');
   assert.equal(pendingOperationID(undefined), '');
+});
+
+check('a turn stopped on a question is told apart from one awaiting approval', () => {
+  const asking = turn({ status: 'pending', traces: [{ id: 'q', name: 'ask_question', result: { status: 'pending', operation_id: 'op-q' } }] });
+  const approving = turn({ status: 'pending', traces: [{ id: 'w', name: 'keys_create', result: { status: 'pending', operation_id: 'op-w' } }] });
+  assert.equal(isAwaitingAnswer(asking), true);
+  assert.equal(isAwaitingAnswer(approving), false);
+  assert.equal(isAwaitingAnswer({ ...asking, status: 'success' }), false);
 });
 
 check('a question is sendable only when every question has a choice or typed text', () => {

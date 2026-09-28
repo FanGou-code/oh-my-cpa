@@ -49,7 +49,12 @@ export async function agentWorkspace({ base, page, check }) {
   check('agent directory groups by permission', await directory.getByText('Destructive', { exact: true }).count() >= 1);
   await directory.getByLabel('Filter by name or description').fill('callable');
   check('agent directory filters to matches', await directory.getByText('providers_list').count() === 1 && await directory.getByText('providers_delete').count() === 0);
+  // Rows read in the operator's language, with the identifier beside the title, and the filter
+  // matches the text the operator reads rather than only the registry's English.
+  await directory.getByLabel('Filter by name or description').fill('the configured');
+  check('agent directory filters on the localized description', await directory.getByText('providers_list').count() === 1 && await directory.getByText('providers_delete').count() === 0);
   await directory.getByLabel('Filter by name or description').fill('');
+  check('agent directory titles each capability in the console language', await directory.getByText('Delete a provider', { exact: true }).count() === 1);
 
   // The empty state teaches the request shapes this deployment can answer.
   check('agent empty state offers example prompts', await page.getByText('Try one of these').count() === 1);
