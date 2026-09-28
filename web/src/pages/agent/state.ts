@@ -5,6 +5,8 @@ import { languageLocale } from '../../i18n/language';
 export interface CapabilityReceipt {
   status: string;
   code?: string;
+  /** What to change, for a refusal its author can act on - a query naming an unreadable column. */
+  detail?: string;
   data?: unknown;
   operation_id?: string;
   invalidates?: string[];
@@ -53,10 +55,46 @@ export interface Conversation {
 export interface Operation {
   id: string;
   capability: string;
+  /** Recorded when the operation was prepared; older records carry none. */
+  permission?: string;
   status: string;
   human_input?: string;
-  preview: { target: string; changes?: unknown; challenge?: string };
+  preview: { target: string; changes?: unknown };
   result: CapabilityReceipt;
+}
+
+/** One question the agent asks through `ask_question`, as its prepared operation carries it. */
+export interface AgentQuestion {
+  question: string;
+  header?: string;
+  options?: { label: string; description?: string }[];
+  multi_select?: boolean;
+}
+
+/** The operator's reply to one question: chosen option labels, typed text, or both. */
+export interface QuestionReply {
+  selected: string[];
+  text: string;
+}
+
+/** The questions of an `ask_question` operation, or none when the preview is not shaped like one. */
+export function operationQuestions(operation: Operation | undefined): AgentQuestion[] {
+  const changes = operation?.preview.changes as { questions?: unknown } | undefined;
+  if (!Array.isArray(changes?.questions)) return [];
+  return changes.questions.filter((item): item is AgentQuestion =>
+    typeof item === 'object' && item !== null && typeof (item as AgentQuestion).question === 'string');
+}
+
+/** Every question has something to send: a chosen option or typed text. */
+export function isQuestionAnswered(replies: QuestionReply[], count: number): boolean {
+  return replies.length === count && replies.every(reply => reply.selected.length > 0 || reply.text.trim() !== '');
+}
+
+/** The operation the conversation is waiting on, if its last turn stopped for one. */
+export function pendingOperationID(conversation: Conversation | undefined): string {
+  const last = conversation?.turns.at(-1);
+  if (last?.status !== 'pending') return '';
+  return [...last.traces].reverse().find(trace => trace.result.status === 'pending' && trace.result.operation_id)?.result.operation_id ?? '';
 }
 
 /**
@@ -228,9 +266,10 @@ const FAILURE_KEYS: Record<string, string> = {
   agent_busy: 'agent.error.busy',
   agent_revision_conflict: 'agent.error.conflict',
   confirmation_pending: 'agent.error.pending',
-  confirmation_mismatch: 'agent.error.mismatch',
   confirmation_expired: 'agent.error.expired',
   secret_required: 'agent.error.secret',
+  answer_required: 'agent.error.answer',
+  invalid_answer: 'agent.error.answer',
   capability_forbidden: 'agent.error.forbidden',
   capability_unavailable: 'agent.error.unavailable',
   invalid_parameters: 'agent.error.parameters',
@@ -258,7 +297,6 @@ const FAILURE_KEYS: Record<string, string> = {
   schema_budget_exceeded: 'agent.error.budget',
   conversation_budget_exceeded: 'agent.error.budget',
   agent_document_too_large: 'agent.error.budget',
-  invalid_confirmation: 'agent.error.mismatch',
   demo_operation_refused: 'demo.blocked',
 };
 
@@ -401,17 +439,6 @@ export function formatClock(milliseconds: number | undefined, lang: Lang): strin
 export function turnDuration(turn: Turn): number | undefined {
   if (!turn.started_at_ms || !turn.ended_at_ms) return undefined;
   return turn.ended_at_ms - turn.started_at_ms;
-}
-
-/** Whether the conversation is waiting on a human decision, and for how many operations. */
-export function pendingOperationCount(turns: Turn[]): number {
-  let count = 0;
-  for (const turn of turns) {
-    for (const trace of turn.traces) {
-      if (trace.result.status === 'pending') count += 1;
-    }
-  }
-  return count;
 }
 
 export function isAwaitingApproval(conversation: Conversation | undefined): boolean {

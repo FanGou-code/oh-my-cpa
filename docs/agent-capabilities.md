@@ -58,7 +58,7 @@ A declaration is one call to `capability.Register` with:
 | `Version` | Incremented when a pending operation's meaning changes |
 | `Permission` | `read`, `write`, or `destructive` |
 | `Risk` | `low` or `high`; `high` requires a prepare function and human confirmation |
-| `HumanInput` | Optional `secret` or `oauth` browser handoff |
+| `HumanInput` | Optional browser handoff: `secret` or `oauth` on a `high` risk write, or `answer` on a read that waits for the operator's reply (`ask_question`) |
 | `Adapters` | `agent`, `mcp`, or both; exposure is explicit, never implied |
 | `Invalidates` | React Query keys the UI should refresh after a successful write |
 
@@ -82,21 +82,22 @@ configuration is `high` risk and goes through the executor's confirmation flow:
 
 1. The model calls the tool.
 2. The `Prepare` function reads the current state and returns a structured preview:
-   `Target`, `Revision` (the identity and version the approval is bound to),
-   `Changes`, and - for destructive actions - a `Challenge` the operator must type.
+   `Target`, `Revision` (the identity and version the approval is bound to), and
+   `Changes`.
 3. The executor stores the pending operation encrypted, writes a `prepared` audit
    event, and returns `{status: "pending", operation_id: ...}` to the caller.
-4. A signed-in operator approves or rejects it in the console. Approval re-validates
-   the capability version, the caller's authority, and the resource revision inside the
-   same write gate that performs the change.
+4. The console opens the request as an authorization dialog, and a signed-in operator
+   makes one decision: allow or deny (ADR 0034). Approval re-validates the capability
+   version, the caller's authority, and the resource revision inside the same write gate
+   that performs the change; deciding continues the Agent's run without a separate step.
 5. The result is recorded (`success`, `partial`, `error`, or `uncertain`) and audited.
    An operation is consumed once; a repeated approval returns the stored outcome.
 
 Rules that are not optional:
 
-- Destructive capabilities must ask the operator to type the target identifier. A
-  batch operation must show the resolved target list and its count, and must never
-  expand a wildcard at execution time.
+- A destructive capability is marked `destructive`, which the dialog states as an
+  irreversible change. A batch operation must show the resolved target list and its
+  count, and must never expand a wildcard at execution time.
 - The approval is bound to the revision captured by `Prepare`; if the target changed,
   the executor returns `resource_conflict` and the operator must re-confirm.
 - A write that may have reached CPA but cannot be verified is reported as `uncertain`
@@ -110,8 +111,41 @@ one model is priced (`auto`, `linked` to an OpenRouter id, or `custom` rates wit
 optional tiers) and `pricing_channel_set` sets one channel multiplier; both are `high`
 risk and are bound to the revision of the current price list or channel list, so an
 edit made in the console between preparation and approval returns `resource_conflict`.
-`pricing_delete` and `pricing_channel_delete` are destructive and challenge for the
-model or channel name. None of them reprices a recorded request (ADR 0030).
+`pricing_delete` and `pricing_channel_delete` are destructive. None of them reprices a recorded request (ADR 0030).
+
+### Asking the operator
+
+`ask_question` is the one capability that belongs to the conversation rather than to OMC:
+`internal/agent` registers it, for the built-in Agent only. The model asks 1-4 questions in one
+call, each with 0 or 2-6 labelled options (single or multiple choice), and the operator can always
+type an answer instead. It is a `read` with `HumanInput: "answer"`: the executor stores it as a
+pending operation that expires after 24 hours, the console draws it in place of the composer, and
+the operator's answer is validated against the questions before the operation is claimed, so a
+malformed answer leaves it open. The model receives each question with the chosen labels and typed
+text; Skip is a `rejected` result. It is not a way to ask for approval (writes already ask) or for
+secrets.
+
+### Read-only database queries
+
+`database_schema` lists what `database_query` may read, and `database_query` runs one SQLite
+`SELECT` against OMC's own database (ADR 0035). The policy lives in
+`internal/repository/readonly_query.go`, not in the capability:
+
+- a separate read-only connection (`mode=ro`, `query_only`, no attached databases, bounded value
+  sizes);
+- exactly one `SELECT` or `WITH` statement;
+- the compiled program is read before it runs: every table or index opened must belong to a table
+  in `QUERY_READABLE_TABLES`, no column in that table's redacted list may be read, and write
+  opcodes, virtual tables (so `json_each` and `pragma_*`) and databases other than `main` are
+  refused;
+- at most 200 rows, 24 KiB, 500 characters per cell and 5 seconds; credential-shaped text is
+  replaced and email addresses are masked.
+
+A refusal or an SQL error is an `error` result whose `detail` names what to change. Every table
+must be classified: readable in `QUERY_READABLE_TABLES` or hidden in `QUERY_HIDDEN_TABLES` with a
+reason, and `TestEveryTableIsClassifiedForOperatorQueries` fails until a new table is. A migration
+that adds a column able to carry a secret to a readable table adds it to that table's redacted list
+in the same change.
 
 ### Secrets and OAuth
 
@@ -132,7 +166,8 @@ Capabilities are opt-in. The following are deliberately not reachable by an agen
 a new capability must not add them:
 
 - raw credential reads, auth-file downloads, or key reveals;
-- arbitrary URL, CPA, or HTTP proxying; SQL; filesystem; shell; or host maintenance;
+- arbitrary URL, CPA, or HTTP proxying; SQL beyond the read-only query surface above
+  (no writes, no hidden table, no redacted column); filesystem; shell; or host maintenance;
 - plugin installation, execution, or configuration, including the plugin system settings;
 - raw configuration YAML writes - only the named scalar allowlist
   (`request_retry`, `max_retry_interval`, `max_retry_credentials`,

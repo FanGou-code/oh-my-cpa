@@ -132,8 +132,10 @@ The workspace above that loop is `web/src/pages/agent`, built on the shared conv
 `web/src/components/workspace`: the registry is browsable as a capability directory
 (`CapabilityDirectory.tsx`), the run's transport is one hook (`useAgentRun.ts`), the transcript
 is a memoised turn list (`AgentTurn.tsx`) that draws capability calls as an Ant Design X
-`ThoughtChain`, and a prepared operation is decided on its own card (`OperationCard.tsx`). The
-presentation rules - status vocabulary, chain status, failure copy, result digest, change preview -
+`ThoughtChain`, a prepared operation is decided in an authorization dialog
+(`AuthorizationDialog.tsx`) that opens when a run stops for it, and an `ask_question` call is
+answered in a panel that takes the composer's place (`QuestionPanel.tsx`); deciding either one
+continues the run (ADR 0034). The presentation rules - status vocabulary, chain status, failure copy, result digest, change preview -
 are pure functions in `state.ts` with their own suite.
 
 A run request carries the message, the target and an optional `reasoning_effort`, validated by
@@ -152,12 +154,20 @@ assert them without a browser.
 
 `internal/capability.Executor` is the authority gate. Reads execute immediately; a
 capability marked high risk returns a server-generated pending operation with a
-structured preview and target revision; approval happens only in the browser and is
-re-validated against the capability version, the caller's authority, and the current
+structured preview and target revision; approval is one allow-or-deny decision made only
+in the browser and is re-validated against the capability version, the caller's authority, and the current
 revision while the write gate is held. An unverified or interrupted write is reported
 as `uncertain` rather than retried. Secrets and OAuth authorization never enter tool
 arguments or model-visible results: the console posts them directly while approving the
-operation.
+operation. `ask_question`, which `internal/agent` registers, uses the same pending-operation
+path with an `answer` input and is the only capability that belongs to the conversation rather
+than to `internal/operations`.
+
+`database_schema` and `database_query` read OMC's own database through a second, read-only
+SQLite pool that `internal/repository` opens on first use (`mode=ro`, `query_only`, no attached
+databases). The repository checks each statement's compiled `EXPLAIN` program against a table and
+column classification before running it, and bounds and masks what it returns (ADR 0035,
+`docs/agent-capabilities.md`).
 
 External agents use the same registry through `oh-my-cpa mcp`, a stdio MCP server. The
 subcommand is dispatched before configuration, database, and CPA client initialization,

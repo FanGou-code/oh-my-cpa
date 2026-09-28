@@ -133,26 +133,23 @@
   50% { opacity: 1; }
 }
 
-/* ── approval card ─────────────────────────────────────────────────────────── */
+/* ── authorization dialog ──────────────────────────────────────────────────── */
 
-.operation {
+.authorization {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
 }
 
-/* An open decision is the one thing on the page that is waiting for the reader, so it carries the
-   caution hue on its frame; a decided one returns to an ordinary record. */
-.is-pending {
-  border-color: var(--warn);
+.authorization-lead {
+  margin: 0;
+  color: var(--fg-2);
 }
 
-.is-destructive.is-pending {
-  border-color: var(--danger);
+.authorization-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
 .operation-head {
@@ -162,23 +159,6 @@
   flex-wrap: wrap;
   min-width: 0;
   font-size: 12px;
-}
-
-.operation-icon {
-  color: var(--muted);
-}
-
-.is-pending .operation-icon {
-  color: var(--warn);
-}
-
-.is-destructive.is-pending .operation-icon {
-  color: var(--danger);
-}
-
-.operation-title {
-  color: var(--fg);
-  font-weight: 600;
 }
 
 .operation-capability {
@@ -207,14 +187,6 @@
   overflow-wrap: anywhere;
 }
 
-.operation-decision {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-soft);
-}
-
 .operation-actions {
   display: flex;
   justify-content: flex-end;
@@ -235,6 +207,83 @@
   border-radius: var(--radius-sm);
   background: var(--bg);
   letter-spacing: .08em;
+}
+
+/* ── question panel ────────────────────────────────────────────────────────── */
+
+/* Takes the composer's place while the agent waits for an answer, so it keeps the composer's frame
+   and carries the accent on it: this is where the operator's next input goes. */
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.question-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.question-icon {
+  color: var(--accent);
+}
+
+.question-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.question-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+  padding: 0;
+  color: var(--fg);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.question-chip {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-option {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.question-option-description {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* ── capability directory ──────────────────────────────────────────────────── */

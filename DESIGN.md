@@ -391,7 +391,9 @@ the configuration workbench.
 - **Agent**: a capability directory as an open list grouped read / write / destructive with pips;
   a turn drawn in the order it happened - reasoning, text and capability calls as segments, the calls
   of one round as an X `ThoughtChain` with warn-toned attention marks for pending or unconfirmed
-  steps; approval cards framed in the caution (or danger) hue until decided; the data notice as the
+  steps; an authorization dialog that opens by itself with one Deny / Allow decision (Allow in the
+  danger hue for a destructive capability); agent questions in an accent-framed panel that takes
+  the composer's place; the data notice as the
   line beneath the composer (no consent checkbox); the reasoning effort as a quiet text button in the
   composer's foot; reasoning shown live and kept with the turn; the sent message shown at once.
 

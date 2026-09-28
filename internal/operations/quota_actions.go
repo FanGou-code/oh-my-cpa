@@ -20,9 +20,7 @@ func (s *Service) registerQuotaActions(registry *capability.Registry) error {
 		metadata := Meta(action.Name, action.Description, "write", "high")
 		metadata.Invalidates = []string{"management-quota", "management-auth-files"}
 		if err := capability.Register(registry, metadata, func(ctx context.Context, input CredentialTarget) (capability.Preview, error) {
-			preview, err := s.credentialPreview(ctx, input, map[string]any{"credential": input, "action": action.Action})
-			preview.Challenge = ""
-			return preview, err
+			return s.credentialPreview(ctx, input, map[string]any{"credential": input, "action": action.Action})
 		}, func(ctx context.Context, input CredentialTarget, revision, _ string) (Done, error) {
 			err := s.ActOnQuota(ctx, input, action.Action, revision)
 			return Done{err == nil}, err

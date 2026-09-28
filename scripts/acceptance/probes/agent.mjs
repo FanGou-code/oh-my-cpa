@@ -17,7 +17,7 @@ const frame = event => `data: ${JSON.stringify(event)}\n\n`;
 
 export async function agentWorkspace({ base, page, check }) {
   let conversation = initial();
-  let operation = { id: 'operation-test', capability: 'providers_delete', status: 'pending', preview: { target: 'provider-test', challenge: 'provider-test', changes: { provider: 'provider-test' } }, result: { status: 'pending' } };
+  let operation = { id: 'operation-test', capability: 'providers_delete', permission: 'destructive', status: 'pending', preview: { target: 'provider-test', changes: { provider: 'provider-test' } }, result: { status: 'pending' } };
   const runs = [];
   const decisions = [];
   await page.route('**/agent/session', route => route.fulfill({ json: conversation }));
@@ -80,20 +80,19 @@ export async function agentWorkspace({ base, page, check }) {
   // Enter is the composer's primary submit. It is asserted rather than the button, because the two
   // are separate paths through the chat component and only the button used to work.
   await composer.press('Enter');
-  await page.getByLabel('Enter target identifier to confirm').waitFor();
+  // A run that stops for approval puts the request in front of the operator by itself.
+  const dialog = page.getByRole('dialog', { name: 'Authorization required' });
+  await dialog.waitFor();
   check('agent submits a message with Enter', runs.length === 1 && runs[0].message === 'Disable this provider', JSON.stringify(runs));
   check('agent sends the chosen reasoning effort and no consent flag', runs[0].reasoning_effort === 'high' && !('has_consent' in runs[0]), JSON.stringify(runs[0]));
-  check('agent cannot submit destructive approval without target challenge', await page.getByRole('button', { name: 'Approve execution' }).isDisabled());
-  await page.getByLabel('Enter target identifier to confirm').fill('provider-test');
-  // The approval gate opens only once the typed identifier has committed, and a click that
-  // lands first is swallowed rather than reported. Wait for the affordance the click depends on.
-  await until(async () => await page.getByRole('button', { name: 'Approve execution' }).isEnabled(), {
-    label: 'the approval gate to open for the typed target identifier',
-  });
-  await page.getByRole('button', { name: 'Approve execution' }).click();
+  check('agent opens the authorization dialog when a run stops for approval', await dialog.getByText('providers_delete').isVisible() && await dialog.getByText('provider-test').first().isVisible());
+  check('a destructive request is one decision, with nothing to type', await dialog.getByRole('textbox').count() === 0 && await dialog.getByText('This cannot be undone.').isVisible());
+  await dialog.getByRole('button', { name: 'Allow', exact: true }).click();
   await until(() => decisions.length === 1, { label: 'the approval decision reach the server' });
-  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  // Deciding is the whole interaction: the run continues without a separate Resume.
   await page.getByText('The approved operation completed.').waitFor();
+  check('agent posts one allow decision with no confirmation text', JSON.stringify(decisions[0]) === JSON.stringify({ approve: true }), JSON.stringify(decisions[0]));
+  check('agent continues the run once the operator decides', await dialog.count() === 0 || !(await dialog.isVisible()));
   check('agent resumes server conversation instead of supplying tool history', runs.length === 2 && runs[1].message === '' && !('messages' in runs[1]) && !('tools' in runs[1]));
   check('agent offers a new conversation once there is one to replace', await page.getByRole('button', { name: 'New conversation', exact: true }).isEnabled());
   await page.reload();
@@ -242,4 +241,54 @@ export async function agentLive({ base, page, check }) {
   const positions = ['Compare failures by model first.', 'Let me read the last hour.', 'usage_aggregate', 'One model dominates.', 'Two models failed most.'].map(fragment => text.indexOf(fragment));
   check('a turn is drawn in the order the model worked', positions.every(position => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), JSON.stringify(positions));
   check('each stretch of reasoning keeps its own place', await turn.getByText('Thought process', { exact: true }).count() === 2);
+}
+
+/**
+ * `ask_question` takes the composer's place: the agent's options, a typed answer beside them, and
+ * sending the reply continues the run.
+ */
+export async function agentQuestion({ base, page, check }) {
+  let conversation = initial();
+  let operation = { id: 'question-test', capability: 'ask_question', permission: 'read', human_input: 'answer', status: 'pending', preview: { target: 'Which window?', changes: { questions: [
+    { question: 'Which window should the summary cover?', header: 'Window', options: [{ label: 'Last hour' }, { label: 'Last 24 hours', description: 'The console default' }] },
+    { question: 'Which providers matter?', options: [{ label: 'OpenAI' }, { label: 'Gemini' }], multi_select: true },
+  ] } }, result: { status: 'pending' } };
+  const runs = [];
+  const decisions = [];
+  await page.route('**/agent/session', route => route.fulfill({ json: conversation }));
+  await page.route('**/agent/operations/question-test', route => route.fulfill({ json: operation }));
+  await page.route('**/agent/operations/question-test/decision', async route => {
+    decisions.push(JSON.parse(route.request().postData()));
+    operation = { ...operation, status: 'success', result: { status: 'success', data: { answers: [] } } };
+    await route.fulfill({ json: operation });
+  });
+  await page.route('**/agent/run', async route => {
+    runs.push(JSON.parse(route.request().postData()));
+    const isFirst = runs.length === 1;
+    conversation = { ...conversation, revision: conversation.revision + 1, turns: [{ id: 'turn-question', user: 'Summarize usage', reply: isFirst ? '' : 'Here is the 24 hour summary.', status: isFirst ? 'pending' : 'success', started_at_ms: Date.now() - 800, ended_at_ms: Date.now(), traces: [{ id: 'tool-question', name: 'ask_question', result: isFirst ? { status: 'pending', operation_id: operation.id } : { status: 'success', data: { answers: [] } } }] }] };
+    await route.fulfill({ contentType: 'text/event-stream', body: frame({ type: 'state', conversation }) });
+  });
+  await page.goto(`${base}/agent`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid="agent-page"]').waitFor();
+  await page.getByLabel('Describe an OMC query or action').fill('Summarize usage');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  const panel = page.locator('[data-testid="agent-question"]');
+  await panel.waitFor();
+  check('a question takes the composer\'s place', await page.getByLabel('Describe an OMC query or action').count() === 0 && await panel.getByText('Which window should the summary cover?').isVisible());
+  const submit = panel.getByRole('button', { name: 'Submit answer', exact: true });
+  check('an unanswered question cannot be sent', await submit.isDisabled());
+  // Choices are asserted by what they commit rather than by the click: an option group renders its
+  // checked state from the value it is handed, one render after the click that changed it.
+  for (const option of [panel.getByRole('radio', { name: /Last 24 hours/ }), panel.getByRole('checkbox', { name: 'OpenAI' }), panel.getByRole('checkbox', { name: 'Gemini' })]) {
+    await option.click();
+    await until(async () => await option.isChecked(), { label: 'the chosen option to commit' });
+  }
+  await panel.getByLabel('Or type another answer').first().fill('Exclude test keys');
+  await until(async () => await submit.isEnabled(), { label: 'the answer to become sendable' });
+  await submit.click();
+  await page.getByText('Here is the 24 hour summary.').waitFor();
+  const answers = decisions[0]?.answer?.answers;
+  check('the reply carries each question\'s choices and typed text', decisions.length === 1 && decisions[0].approve === true
+    && JSON.stringify(answers) === JSON.stringify([{ selected: ['Last 24 hours'], text: 'Exclude test keys' }, { selected: ['OpenAI', 'Gemini'], text: '' }]), JSON.stringify(decisions));
+  check('answering continues the run and returns the composer', runs.length === 2 && runs[1].message === '' && await page.getByLabel('Describe an OMC query or action').count() === 1);
 }

@@ -23,15 +23,17 @@ import { usePreference } from '../../hooks/usePreference';
 import { gatewayCallPointOf } from '../../types/gatewayModels';
 import { useI18n } from '../../i18n';
 import { isDemoMode } from '../../types/demoMode';
-import { failureCode, getCapabilities, getSession, resetSession } from './api';
+import { failureCode, getCapabilities, getOperation, getSession, resetSession } from './api';
+import { AuthorizationDialog } from './AuthorizationDialog';
 import { CapabilityDirectory } from './CapabilityDirectory';
+import { QuestionPanel } from './QuestionPanel';
 import { TurnView } from './AgentTurn';
 import type { LiveRun } from './AgentTurn';
 import { useAgentRun } from './useAgentRun';
 import {
-  AGENT_TARGET_PREFERENCE, DEFAULT_AGENT_TARGET, failureKey, isAwaitingApproval, parseAgentTarget, pendingOperationCount,
+  AGENT_TARGET_PREFERENCE, DEFAULT_AGENT_TARGET, failureKey, isAwaitingApproval, parseAgentTarget, pendingOperationID,
 } from './state';
-import type { AgentTarget, Conversation } from './state';
+import type { AgentTarget, Conversation, Operation } from './state';
 import styles from './AgentPage.module.css';
 
 /**
@@ -139,12 +141,42 @@ export function AgentPage() {
   const isAwaiting = isAwaitingApproval(session.data);
   const isFullyConfigured = !!fingerprint && !!model;
   const canRun = !isRunning && !isDemo && isFullyConfigured && !!session.data;
-  const canSubmit = isAwaiting ? canRun : canRun && !!message.trim();
 
-  const submit = (text: string) => {
-    if (!canSubmit) return;
+  // ── the operator's decision ────────────────────────────────────────────────
+  //
+  // A run that stops for the operator stops on one prepared operation: an approval, which opens
+  // as a dialog, or a question, which takes the composer's place. Deciding it continues the run
+  // straight away, so the operator's one click is the whole interaction. Polled while open, in
+  // case another tab decides it first.
+  const pendingID = isAwaiting ? pendingOperationID(session.data) : '';
+  const pending = useQuery({
+    queryKey: ['agent-operation', pendingID],
+    queryFn: ({ signal }) => getOperation(pendingID, signal),
+    enabled: !!pendingID,
+    refetchInterval: query => (query.state.data?.status === 'pending' ? 5000 : false),
+  });
+  const openOperation = pending.data?.status === 'pending' ? pending.data : undefined;
+  const isQuestion = openOperation?.human_input === 'answer';
+  const [dismissedID, setDismissedID] = React.useState('');
+  const isDialogOpen = !!openOperation && !isQuestion && dismissedID !== openOperation.id && !isRunning;
+
+  const onDecided = (operation: Operation) => {
+    queryClient.setQueryData(['agent-operation', operation.id], operation);
+    for (const key of operation.result.invalidates ?? []) void queryClient.invalidateQueries({ queryKey: [key] });
+    if (operation.status === 'pending') return;
     listRef.current?.followLatest();
     // Resumption is the same request with an empty message: the server continues the stored turn.
+    if (canRun) run('');
+  };
+
+  const canSubmit = isAwaiting ? canRun || (!!openOperation && !isRunning) : canRun && !!message.trim();
+  const submit = (text: string) => {
+    if (!canSubmit) return;
+    if (openOperation) {
+      setDismissedID('');
+      return;
+    }
+    listRef.current?.followLatest();
     run(isAwaiting ? '' : text);
     if (!isAwaiting) setMessage('');
   };
@@ -161,17 +193,12 @@ export function AgentPage() {
     }
   };
 
-  // Stable for the life of the page: an inline arrow would be a new prop on every publish tick,
-  // which re-renders every stored turn - and re-parses every stored answer - 25 times a second.
-  const refetchSession = session.refetch;
-  const refreshSession = React.useCallback(() => void refetchSession(), [refetchSession]);
-
   // Built in two halves. Stored turns depend only on the stored conversation, so a streaming
   // answer changes the tail item and every earlier element keeps its identity.
   const historyItems = React.useMemo<BubbleItemType[]>(() => turns.flatMap(turn => [
     { key: `${turn.id}-user`, role: 'user', content: <div className={workspace['user-text']}>{turn.user}</div> },
-    { key: `${turn.id}-ai`, role: 'ai', content: <TurnView turn={turn} onSettled={refreshSession} /> },
-  ]), [turns, refreshSession]);
+    { key: `${turn.id}-ai`, role: 'ai', content: <TurnView turn={turn} /> },
+  ]), [turns]);
 
   const isLive = isRunning || traces.length > 0 || parts.length > 0;
   const live = React.useMemo<LiveRun | undefined>(
@@ -186,7 +213,7 @@ export function AgentPage() {
     if (isResuming && lastTurn) {
       return [
         ...historyItems.slice(0, -1),
-        { key: `${lastTurn.id}-ai`, role: 'ai', content: <TurnView turn={lastTurn} live={live} onSettled={refreshSession} /> },
+        { key: `${lastTurn.id}-ai`, role: 'ai', content: <TurnView turn={lastTurn} live={live} /> },
       ];
     }
     return [
@@ -194,9 +221,9 @@ export function AgentPage() {
       // The operator's message is shown as sent at once; the stored turn replaces it when the run
       // reports the conversation it saved.
       ...(pendingMessage ? [{ key: 'agent-running-user', role: 'user', content: <div className={workspace['user-text']}>{pendingMessage}</div> }] : []),
-      { key: 'agent-running', role: 'ai', content: <TurnView live={live} onSettled={refreshSession} /> },
+      { key: 'agent-running', role: 'ai', content: <TurnView live={live} /> },
     ];
-  }, [historyItems, live, turns, isResuming, pendingMessage, refreshSession]);
+  }, [historyItems, live, turns, isResuming, pendingMessage]);
 
   const runError = localError || errorCode;
   const notices = (
@@ -206,7 +233,7 @@ export function AgentPage() {
         <Alert
           type="error"
           title={t('agent.session.failed')}
-          action={<Button size="small" onClick={refreshSession}>{t('common.retry')}</Button>}
+          action={<Button size="small" onClick={() => void session.refetch()}>{t('common.retry')}</Button>}
         />
       )}
       {!isDemo && keys.isSuccess && keys.data.keys.length === 0 && (
@@ -257,10 +284,12 @@ export function AgentPage() {
   );
 
   // Sending is the act this line describes: the message, and whatever the agent reads to answer
-  // it, goes to the selected model and on to its upstream provider (ADR 0027).
-  const note = isAwaiting
-    ? t('agent.resume.hint', { count: String(pendingOperationCount(turns)) })
-    : t('agent.data_notice');
+  // it, goes to the selected model and on to its upstream provider (ADR 0027). While a decision is
+  // open the send button reopens it; once decided, it resumes a run that did not continue itself.
+  const note = !isAwaiting
+    ? t('agent.data_notice')
+    : t(openOperation ? 'agent.operation.hint' : 'agent.resume.hint');
+  const sendLabel = !isAwaiting ? 'agent.send' : openOperation ? 'agent.operation.review' : 'agent.resume';
 
   return (
     <XProvider locale={xLocale}>
@@ -322,29 +351,45 @@ export function AgentPage() {
         ) : (
           <ConversationList ref={listRef} items={items} roles={BUBBLE_ROLES} latestLabel={t('pg.latest')} />
         )}
-        <Composer
-          ref={composerRef}
-          value={message}
-          onChange={setMessage}
-          onSubmit={submit}
-          onStop={stop}
-          placeholder={t('agent.message')}
-          inputLabel={t('agent.message')}
-          sendLabel={t(isAwaiting ? 'agent.resume' : 'agent.send')}
-          isSendLabelled={isAwaiting}
-          stopLabel={t('agent.stop')}
-          isRunning={isRunning}
-          canSend={canSubmit}
-          isDisabled={isDemo || !session.data || !isFullyConfigured || isAwaiting}
-          footerStart={(
-            <ReasoningEffortPicker
-              value={reasoningEffort}
-              isDisabled={isRunning || isAwaiting}
-              onChange={value => chooseTarget({ fingerprint, model, reasoningEffort: value })}
-            />
-          )}
-          note={note}
-        />
+        {openOperation && !isQuestion && (
+          <AuthorizationDialog
+            key={openOperation.id}
+            operation={openOperation}
+            capability={capabilities.data?.find(item => item.name === openOperation.capability)}
+            isOpen={isDialogOpen}
+            onClose={() => setDismissedID(openOperation.id)}
+            onDecided={onDecided}
+          />
+        )}
+        {openOperation && isQuestion ? (
+          <div className={workspace['composer']}>
+            <QuestionPanel key={openOperation.id} operation={openOperation} onDecided={onDecided} />
+          </div>
+        ) : (
+          <Composer
+            ref={composerRef}
+            value={message}
+            onChange={setMessage}
+            onSubmit={submit}
+            onStop={stop}
+            placeholder={t('agent.message')}
+            inputLabel={t('agent.message')}
+            sendLabel={t(sendLabel)}
+            isSendLabelled={isAwaiting}
+            stopLabel={t('agent.stop')}
+            isRunning={isRunning}
+            canSend={canSubmit}
+            isDisabled={isDemo || !session.data || !isFullyConfigured || isAwaiting}
+            footerStart={(
+              <ReasoningEffortPicker
+                value={reasoningEffort}
+                isDisabled={isRunning || isAwaiting}
+                onChange={value => chooseTarget({ fingerprint, model, reasoningEffort: value })}
+              />
+            )}
+            note={note}
+          />
+        )}
       </WorkspaceLayout>
     </XProvider>
   );

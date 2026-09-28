@@ -16,6 +16,7 @@ type Result struct {
 	Status      string          `json:"status"`
 	Data        json.RawMessage `json:"data,omitempty"`
 	Code        string          `json:"code,omitempty"`
+	Detail      string          `json:"detail,omitempty"`
 	OperationID string          `json:"operation_id,omitempty"`
 	Invalidates []string        `json:"invalidates,omitempty"`
 }
@@ -25,6 +26,7 @@ type Operation struct {
 	Adapter     string          `json:"adapter"`
 	SessionID   string          `json:"session_id,omitempty"`
 	Capability  string          `json:"capability"`
+	Permission  string          `json:"permission,omitempty"`
 	Version     int             `json:"version"`
 	Arguments   json.RawMessage `json:"arguments"`
 	Preview     Preview         `json:"preview"`
@@ -72,7 +74,7 @@ func (e *Executor) Invoke(ctx context.Context, p Principal, name string, raw jso
 	if err != nil {
 		return Result{}, err
 	}
-	if definition.Risk == "high" {
+	if definition.Risk == "high" || definition.HumanInput == "answer" {
 		preview, err := definition.Prepare(ctx, canonical)
 		if err != nil {
 			return Result{}, err
@@ -81,10 +83,7 @@ func (e *Executor) Invoke(ctx context.Context, p Principal, name string, raw jso
 		if err != nil || len(previewJSON) > MAX_PAYLOAD_BYTES {
 			return Result{}, errors.New("tool_result_too_large")
 		}
-		operation := Operation{ID: NewID(), PrincipalID: p.ID, Adapter: p.Adapter, SessionID: sessionID, Capability: name, Version: definition.Version, Arguments: canonical, Preview: preview, Status: "pending", ExpiresAtMS: time.Now().Add(10 * time.Minute).UnixMilli(), HumanInput: definition.HumanInput}
-		if definition.Permission == "destructive" && preview.Challenge == "" {
-			return Result{}, errors.New("invalid_confirmation")
-		}
+		operation := Operation{ID: NewID(), PrincipalID: p.ID, Adapter: p.Adapter, SessionID: sessionID, Capability: name, Permission: definition.Permission, Version: definition.Version, Arguments: canonical, Preview: preview, Status: "pending", ExpiresAtMS: time.Now().Add(pendingLifetime(definition)).UnixMilli(), HumanInput: definition.HumanInput}
 		if err := e.audit(ctx, p, name, operation.ID, "prepared"); err != nil {
 			return Result{}, err
 		}
@@ -96,7 +95,7 @@ func (e *Executor) Invoke(ctx context.Context, p Principal, name string, raw jso
 	if definition.Permission == "read" {
 		return e.execute(ctx, p, definition, canonical, "", "", NewID()), nil
 	}
-	operation := Operation{ID: NewID(), PrincipalID: p.ID, Adapter: p.Adapter, SessionID: sessionID, Capability: name, Version: definition.Version, Arguments: canonical, Status: "executing", ExpiresAtMS: time.Now().Add(7 * 24 * time.Hour).UnixMilli()}
+	operation := Operation{ID: NewID(), PrincipalID: p.ID, Adapter: p.Adapter, SessionID: sessionID, Capability: name, Permission: definition.Permission, Version: definition.Version, Arguments: canonical, Status: "executing", ExpiresAtMS: time.Now().Add(7 * 24 * time.Hour).UnixMilli()}
 	revision, err := e.Store.Save(ctx, "operation", operation.ID, 0, time.Now().Add(7*24*time.Hour), operation)
 	if err != nil {
 		return Result{}, err
@@ -133,7 +132,21 @@ func (e *Executor) Get(ctx context.Context, p Principal, id string) (Operation, 
 	}
 	return operation, nil
 }
-func (e *Executor) Decide(ctx context.Context, admin Principal, id string, approve bool, challenge, secret string) (Operation, error) {
+
+// pendingLifetime is how long a prepared operation waits for the operator. An approval is bound to
+// a revision the operator saw moments ago, so it expires quickly; a question changes nothing and
+// may reasonably wait until the operator is back.
+func pendingLifetime(definition *Definition) time.Duration {
+	if definition.HumanInput == "answer" {
+		return 24 * time.Hour
+	}
+	return 10 * time.Minute
+}
+
+// Decide records the operator's one decision on a pending operation: allow or deny. humanInput is
+// the value the operation's HumanInput asks for - a secret, or the JSON answer to a question - and
+// is empty otherwise.
+func (e *Executor) Decide(ctx context.Context, admin Principal, id string, approve bool, humanInput string) (Operation, error) {
 	if !admin.IsAdmin || admin.Adapter != "agent" {
 		return Operation{}, errors.New("capability_forbidden")
 	}
@@ -153,11 +166,19 @@ func (e *Executor) Decide(ctx context.Context, admin Principal, id string, appro
 	if err != nil || definition.Version != operation.Version || !e.isAllowed(ctx, caller, operation.Capability) {
 		return operation, errors.New("capability_forbidden")
 	}
-	if approve && operation.Preview.Challenge != "" && challenge != operation.Preview.Challenge {
-		return operation, errors.New("confirmation_mismatch")
-	}
-	if approve && definition.HumanInput == "secret" && (len(secret) == 0 || len(secret) > 8192) {
+	if approve && definition.HumanInput == "secret" && (len(humanInput) == 0 || len(humanInput) > 8192) {
 		return operation, errors.New("secret_required")
+	}
+	// An answer is checked before the operation is claimed, so a malformed one leaves the question
+	// open for the operator to correct instead of consuming it. Answering executes nothing but the
+	// read that validates the answer against the question, so running it twice is harmless.
+	if approve && definition.HumanInput == "answer" {
+		if len(humanInput) == 0 || len(humanInput) > MAX_PAYLOAD_BYTES {
+			return operation, errors.New("answer_required")
+		}
+		if _, err := definition.Execute(ctx, operation.Arguments, "", humanInput); err != nil {
+			return operation, errors.New("invalid_answer")
+		}
 	}
 	if definition.HumanInput == "oauth" && e.VerifyHuman == nil {
 		return operation, errors.New("capability_unavailable")
@@ -181,7 +202,7 @@ func (e *Executor) Decide(ctx context.Context, admin Principal, id string, appro
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 120*time.Second)
 	defer cancel()
 	if approve {
-		operation.Result = e.execute(finishCtx, caller, definition, operation.Arguments, operation.Preview.Revision, secret, id)
+		operation.Result = e.execute(finishCtx, caller, definition, operation.Arguments, operation.Preview.Revision, humanInput, id)
 	} else {
 		operation.Result = Result{Status: "rejected", OperationID: id}
 		if definition.HumanInput == "oauth" {
@@ -199,15 +220,16 @@ func (e *Executor) Decide(ctx context.Context, admin Principal, id string, appro
 	}
 	return operation, nil
 }
-func (e *Executor) execute(ctx context.Context, p Principal, definition *Definition, args json.RawMessage, revision, secret, id string) Result {
+func (e *Executor) execute(ctx context.Context, p Principal, definition *Definition, args json.RawMessage, revision, humanInput, id string) Result {
 	result := Result{Status: "error", OperationID: id}
 	if err := e.audit(ctx, p, definition.Name, id, "attempt"); err != nil {
 		result.Code = "audit_write_failed"
 		return result
 	}
-	value, err := definition.Execute(ctx, args, revision, secret)
+	value, err := definition.Execute(ctx, args, revision, humanInput)
 	if err != nil {
 		result.Code = ErrorCode(err)
+		result.Detail = ErrorDetail(err)
 		if definition.Permission != "read" && (result.Code == "operation_failed" || result.Code == "cancelled" || result.Code == "timeout") {
 			result.Code = "operation_outcome_unknown"
 		}
@@ -252,13 +274,28 @@ func (e *Executor) auditDetails(ctx context.Context, p Principal, name, id, stat
 	}
 	return nil
 }
+// DetailedError is a failure whose caller can act on more than its code - a query's author
+// learning which column the engine did not recognise. The detail must be safe to show the model
+// and the operator: it describes the request, never stored data or credentials.
+type DetailedError interface {
+	error
+	FailureDetail() string
+}
+
+func ErrorDetail(err error) string {
+	var detailed DetailedError
+	if errors.As(err, &detailed) {
+		return detailed.FailureDetail()
+	}
+	return ""
+}
 func ErrorCode(err error) string {
 	if err == nil {
 		return ""
 	}
 	code := err.Error()
 	switch code {
-	case "provider_commit_partial", "agent_busy", "agent_revision_conflict", "confirmation_pending", "confirmation_mismatch", "invalid_tool_arguments", "invalid_tool_result", "tool_input_too_large", "tool_result_too_large", "capability_forbidden", "resource_conflict", "resource_missing", "invalid_window", "invalid_parameters", "operation_outcome_unknown", "capability_unavailable", "audit_write_failed", "write_busy", "secret_required":
+	case "provider_commit_partial", "agent_busy", "agent_revision_conflict", "confirmation_pending", "invalid_tool_arguments", "invalid_tool_result", "tool_input_too_large", "tool_result_too_large", "capability_forbidden", "resource_conflict", "resource_missing", "invalid_window", "invalid_parameters", "operation_outcome_unknown", "capability_unavailable", "audit_write_failed", "write_busy", "secret_required", "answer_required", "invalid_answer", "query_forbidden", "query_invalid", "query_timeout":
 		return code
 	}
 	if errors.Is(err, context.Canceled) {

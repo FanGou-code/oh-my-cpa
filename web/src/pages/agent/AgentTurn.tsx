@@ -10,7 +10,6 @@ import { useI18n } from '../../i18n';
 import type { TFunc } from '../../i18n';
 import { createVisibleClock } from '../../types/visibleClock';
 import { extractThinking } from '../playground/state';
-import { OperationCard } from './OperationCard';
 import {
   failureKey,
   formatClock,
@@ -59,18 +58,20 @@ function traceItem(trace: Trace, t: TFunc): ThoughtChainItemType {
   const { fields, counts } = summarizeResult(trace.result.data);
   const digest = [
     ...(trace.result.code ? [trace.result.code] : []),
+    ...(trace.result.detail ? [trace.result.detail] : []),
     ...fields.map(field => `${field.label} ${field.value}`),
     ...counts.map(count => `${count.label} ${count.value}`),
   ].join(' · ');
   const status = traceChainStatus(trace.result.status);
   const tone = statusTone(trace.result.status, trace.result.code);
   const isRawAvailable = hasRawResult(trace.result);
+  const isQuestionTrace = trace.name === 'ask_question' && trace.result.status === 'pending';
   return {
     key: trace.id,
     title: (
       <span className={styles['trace-title']} data-testid="agent-trace">
         <code className={styles['trace-name']}>{trace.name}</code>
-        <span className={styles['trace-status']} data-tone={tone}>{t(turnLabelKey({ status: trace.result.status }))}</span>
+        <span className={styles['trace-status']} data-tone={tone}>{t(isQuestionTrace ? 'agent.status.question' : turnLabelKey({ status: trace.result.status }))}</span>
       </span>
     ),
     description: digest ? <span className={styles['trace-digest']} title={digest}>{digest}</span> : undefined,
@@ -81,10 +82,11 @@ function traceItem(trace: Trace, t: TFunc): ThoughtChainItemType {
 }
 
 /**
- * The capability calls a model made together, as one chain, followed by the approval card for any
- * of them still waiting on the operator - the decision belongs next to the call that asked for it.
+ * The capability calls a model made together, as one chain. A call waiting on the operator is
+ * decided in the page's authorization dialog or question panel, not here, so the chain only states
+ * that it is waiting.
  */
-function ToolSegment({ traceIDs, traces, onSettled }: { traceIDs: string[]; traces: Map<string, Trace>; onSettled: () => void }) {
+function ToolSegment({ traceIDs, traces }: { traceIDs: string[]; traces: Map<string, Trace> }) {
   const { t } = useI18n();
   const group = React.useMemo(
     () => traceIDs.flatMap(id => (traces.has(id) ? [traces.get(id) as Trace] : [])),
@@ -92,14 +94,7 @@ function ToolSegment({ traceIDs, traces, onSettled }: { traceIDs: string[]; trac
   );
   const items = React.useMemo(() => group.map(trace => traceItem(trace, t)), [group, t]);
   if (group.length === 0) return null;
-  return (
-    <>
-      <ThoughtChain className={styles['chain']} items={items} line="solid" />
-      {group.map(trace => (trace.result.operation_id && trace.result.status === 'pending'
-        ? <OperationCard key={trace.id} id={trace.result.operation_id} onSettled={onSettled} />
-        : null))}
-    </>
-  );
+  return <ThoughtChain className={styles['chain']} items={items} line="solid" />;
 }
 
 /** Answer text; a provider that reasons inline in `<think>` tags has that part shown as reasoning. */
@@ -128,7 +123,6 @@ export interface TurnViewProps {
   turn?: Turn;
   /** Present while a run is writing to this turn. */
   live?: LiveRun;
-  onSettled: () => void;
 }
 
 /**
@@ -142,7 +136,7 @@ export interface TurnViewProps {
  * Memoised on the turn and the live frame: while an answer streams, every stored turn above it
  * keeps its identity and is skipped rather than re-parsed twenty-five times a second.
  */
-export const TurnView = React.memo(function TurnView({ turn, live, onSettled }: TurnViewProps) {
+export const TurnView = React.memo(function TurnView({ turn, live }: TurnViewProps) {
   const { t, lang } = useI18n();
   const nowMS = useLiveNow(Boolean(live));
   const parts = React.useMemo(() => {
@@ -178,7 +172,7 @@ export const TurnView = React.memo(function TurnView({ turn, live, onSettled }: 
     if (segment.kind === 'text') {
       return <TextSegment key={segment.key} content={segment.content} isStreaming={Boolean(live) && isLast} />;
     }
-    return <ToolSegment key={segment.key} traceIDs={segment.traceIDs} traces={traces} onSettled={onSettled} />;
+    return <ToolSegment key={segment.key} traceIDs={segment.traceIDs} traces={traces} />;
   };
 
   return (

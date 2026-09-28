@@ -192,7 +192,7 @@ func (s *Service) registerPricing(registry *capability.Registry) error {
 			return capability.Preview{}, errors.New("invalid_parameters")
 		}
 		current, err := s.ListPrices(ctx, PriceQuery{})
-		return capability.Preview{Target: input.Model, Revision: current.Revision, Challenge: input.Model, Changes: input}, err
+		return capability.Preview{Target: input.Model, Revision: current.Revision, Changes: input}, err
 	}, func(ctx context.Context, input DeleteInput, revision, _ string) (Done, error) {
 		if s.Pricing == nil {
 			return Done{}, errors.New("capability_unavailable")
@@ -238,7 +238,7 @@ func (s *Service) registerPricing(registry *capability.Registry) error {
 			return capability.Preview{}, errors.New("invalid_parameters")
 		}
 		revision, err := channelRevision(ctx)
-		return capability.Preview{Target: input.Channel, Revision: revision, Challenge: input.Channel, Changes: input}, err
+		return capability.Preview{Target: input.Channel, Revision: revision, Changes: input}, err
 	}, func(ctx context.Context, input ChannelDeleteInput, revision, _ string) (Done, error) {
 		if s.Pricing == nil {
 			return Done{}, errors.New("capability_unavailable")

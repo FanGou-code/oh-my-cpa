@@ -1030,13 +1030,21 @@ chain's own marks cover running, succeeded, failed and rejected; a call waiting 
 one whose outcome is partial, expired or unconfirmed carries a `--warn` attention glyph instead of
 being drawn as loading or failed.
 
-A prepared operation is decided on its own card directly beneath the chain that proposed it,
-because the decision belongs next to the call that asked for it. An open card carries the caution hue on its frame - the danger
-hue for a destructive capability - and returns to an ordinary record once decided. It leads with
-the target, lays a form-shaped change out as label/value rows (anything deeper stays JSON), and for
-a destructive capability asks for the target identifier to be typed; the challenge is never
-prefilled. Private input and the OAuth hand-off appear on the card when the capability needs them.
-While a conversation waits on a decision the composer's send becomes a labelled Resume action.
+A prepared operation is decided in an authorization dialog that opens by itself when a run stops
+for it: one decision, Deny or Allow, and deciding continues the run (ADR 0034). The dialog names
+the capability with its permission as a tag and its registry description, leads with the target,
+and lays a form-shaped change out as label/value rows (anything deeper stays JSON). A destructive
+capability draws Allow in the danger hue and adds a "cannot be undone" line; nothing is typed to
+confirm. Private input and the OAuth hand-off appear in the dialog when the capability needs them.
+Dismissing the dialog leaves the composer's send as a labelled "Review request" action that reopens
+it, and Resume remains only for a decided operation whose run could not continue by itself.
+
+A question the agent asks (`ask_question`) takes the composer's place instead of opening a dialog,
+because the answer above it is often what the operator reads to reply. The panel keeps the
+composer's frame with the accent hue on it; each question shows its optional short chip, its
+options as a radio or checkbox list with each option's consequence in muted text beneath its label,
+and a typed-answer field that is always present. Submit is enabled once every question has a choice
+or text; Skip declines them all. The chain step for a pending question reads "Awaiting your answer".
 
 Sending needs no separate grant. The line beneath the composer states that a message, and the OMC
 data the agent reads to answer it, go to the selected CPA model and its upstream (ADR 0027); sending

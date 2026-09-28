@@ -88,18 +88,18 @@ func TestOAuthDecisionClaimsBeforeCancelAndPreservesPending(t *testing.T) {
 		cancellations++
 		return errors.New("remote outcome unknown")
 	}
-	if _, err := executor.Decide(ctx, principal, result.OperationID, true, "", ""); err == nil || err.Error() != "confirmation_pending" {
+	if _, err := executor.Decide(ctx, principal, result.OperationID, true, ""); err == nil || err.Error() != "confirmation_pending" {
 		t.Fatalf("approval: %v", err)
 	}
 	pending, err := executor.Get(ctx, principal, result.OperationID)
 	if err != nil || pending.Status != "pending" {
 		t.Fatalf("lost pending: %+v %v", pending, err)
 	}
-	operation, err := executor.Decide(ctx, principal, result.OperationID, false, "", "")
+	operation, err := executor.Decide(ctx, principal, result.OperationID, false, "")
 	if err != nil || operation.Status != "uncertain" {
 		t.Fatalf("cancel: %+v %v", operation, err)
 	}
-	if _, err := executor.Decide(ctx, principal, result.OperationID, false, "", ""); err != nil || cancellations != 1 {
+	if _, err := executor.Decide(ctx, principal, result.OperationID, false, ""); err != nil || cancellations != 1 {
 		t.Fatalf("replayed cancellation: %d %v", cancellations, err)
 	}
 }
@@ -121,7 +121,7 @@ func TestDecisionAuditFailureDoesNotVerifyOAuth(t *testing.T) {
 	if _, err := executor.Store.Repo.SQL().ExecContext(ctx, `CREATE TRIGGER fail_agent_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(FAIL, 'audit unavailable'); END`); err != nil {
 		t.Fatal(err)
 	}
-	_, err = executor.Decide(ctx, principal, result.OperationID, true, "", "")
+	_, err = executor.Decide(ctx, principal, result.OperationID, true, "")
 	if err == nil || err.Error() != "audit_write_failed" {
 		t.Fatalf("decision: %v", err)
 	}

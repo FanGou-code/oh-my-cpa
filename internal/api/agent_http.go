@@ -132,15 +132,25 @@ func (h *Handler) decideAgentOperation(writer http.ResponseWriter, request *http
 	if !h.readyAgent(writer) {
 		return
 	}
+	// One decision: allow or deny. A secret or an answer rides along only when the operation asks
+	// for one, and never both.
 	var input struct {
-		Approve   bool   `json:"approve"`
-		Challenge string `json:"challenge"`
-		Secret    string `json:"secret"`
+		Approve bool            `json:"approve"`
+		Secret  string          `json:"secret"`
+		Answer  json.RawMessage `json:"answer"`
 	}
 	if !readAgentInput(writer, request, &input) {
 		return
 	}
-	operation, err := h.agent.executor.Decide(request.Context(), agent.PRINCIPAL, chi.URLParam(request, "id"), input.Approve, input.Challenge, input.Secret)
+	humanInput := input.Secret
+	if len(input.Answer) > 0 && string(input.Answer) != "null" {
+		if humanInput != "" {
+			writePlaygroundError(writer, 400, "invalid_parameters")
+			return
+		}
+		humanInput = string(input.Answer)
+	}
+	operation, err := h.agent.executor.Decide(request.Context(), agent.PRINCIPAL, chi.URLParam(request, "id"), input.Approve, humanInput)
 	if err != nil {
 		writePlaygroundError(writer, 409, capability.ErrorCode(err))
 		return
