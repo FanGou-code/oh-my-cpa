@@ -31,7 +31,7 @@ func startReleaseTestServer(t *testing.T) (*http.Client, string, *repository.Rep
 		writer.Header().Set("Content-Type", "application/json")
 		writer.Header().Set("X-CPA-Version", "7.3.5")
 		switch {
-		case hasSuffix(request.URL.Path, "/auth-files"):
+		case hasSuffix(request.URL.Path, "/credentials"):
 			_, _ = writer.Write([]byte(`{"files":[{"name":"a.json"}]}`))
 		case hasSuffix(request.URL.Path, "/plugins"):
 			_, _ = writer.Write([]byte(`[]`))

@@ -299,7 +299,7 @@ export const AppLayout: React.FC = () => {
               placement="right"
             >
               <div className="app-sider-foot is-collapsed">
-                <span className={`legend-dot ${health ? (health.cpa_connected ? 'success' : 'danger') : 'neutral'}`} />
+                <span className={`legend-dot ${health ? (isCpaUnsupported || isCpaManagementDisabled ? 'warning' : health.cpa_connected ? 'success' : 'danger') : 'neutral'}`} />
               </div>
             </Tooltip>
           ) : (

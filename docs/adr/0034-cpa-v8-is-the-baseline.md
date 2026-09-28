@@ -11,8 +11,10 @@ ADR 0028 made one build serve CPA v7 and v8 gateways: operations preferred the g
 followed the stored file's layout, and OMC never performed a v8 configuration write so
 that it would never trigger CPA's migration of the file. In practice the v8 routes were
 rarely the ones exercised, every operation carried two routes and a fallback, and the
-configuration editor carried a relocation table, a legacy-spelling fallback and a save
-guard whose only purpose was to keep v7 working.
+configuration editor carried a relocation table and a legacy-spelling fallback whose only
+purpose was to keep v7 working. Its save guard is different: while the editors write
+whole files through v0, it keeps CPA v8 from silently ignoring shadowed values or
+replacing upstream provider groups, so it stays until those editors move.
 
 Oh My CPA has not had its first release. Declaring the supported gateway range at that
 release costs no existing deployment anything, while CPA v8 brings a declarative,

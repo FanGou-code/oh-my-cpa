@@ -16,8 +16,9 @@ type APIGeneration string
 const (
 	// APIGenerationV8 is /v8/management, the API Oh My CPA is built on.
 	APIGenerationV8 APIGeneration = "v8"
-	// APIGenerationV0 is /v0/management. It is addressed only for the reads the v8
-	// tree does not offer (see client_v0.go); nothing else may use it.
+	// APIGenerationV0 is /v0/management. It is addressed only for the reads and
+	// configuration writes the console has not moved to the v8 tree (see
+	// client_v0.go); nothing else may use it.
 	APIGenerationV0 APIGeneration = "v0"
 )
 
