@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, App as AntdApp, Button, Empty, Input, Segmented, Select, Tooltip } from 'antd';
+import { Alert, App as AntdApp, Button, Input, Segmented, Select, Tooltip } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import clsx from 'clsx';
@@ -9,9 +10,10 @@ import {
   DatabaseOutlined,
   DollarOutlined,
   DownloadOutlined,
-  FilterOutlined,
   KeyOutlined,
   LoginOutlined,
+  ProfileOutlined,
+  RightOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -25,7 +27,6 @@ import {
   auditFacets,
   categoryOf,
   dayKey,
-  formatDetailValue,
   parseAuditSource,
   readableTarget,
   resultTone,
@@ -35,14 +36,15 @@ import {
   type AuditOutcome,
   type AuditRange,
 } from '../../types/audit';
-import { FactList, type Fact } from '../common/FactList';
+import { PageHeader } from '../common/PageHeader';
 import { RefreshButton } from '../common/RefreshButton';
 import { StatusLabel, type StatusTone } from '../common/StatusLabel';
+import { ResponsiveList } from '../common/ResponsiveList';
+import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import { StatTiles } from '../common/StatTiles';
-import { CopyButton } from '../common/CopyButton';
-import { PageLoading } from '../common/PageLoading';
 import { saveBlob } from '../../utils/download';
 import { auditActionLabel, auditResultLabel } from './auditText';
+import { AuditEventDrawer } from './AuditEventDrawer';
 import styles from './Audit.module.css';
 
 /** How long typing settles before the search asks the server. */
@@ -61,7 +63,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   system: <DatabaseOutlined />,
 };
 
-/** The outcome tiles, in reading order, with the tone each one's count is painted in. */
+/** The outcome tiles, in reading order, with the tone of each one's label and count. */
 const OUTCOME_TILES: readonly { outcome: AuditOutcome; tone: StatusTone }[] = [
   { outcome: 'all', tone: 'neutral' },
   { outcome: 'succeeded', tone: 'success' },
@@ -71,95 +73,54 @@ const OUTCOME_TILES: readonly { outcome: AuditOutcome; tone: StatusTone }[] = [
 
 const RANGES: readonly AuditRange[] = ['24h', '7d', '30d', 'all'];
 
-interface AuditEntryProps {
+/** Only reached for the empty and loading states: a phone draws its own entry rows (`AuditPhoneEntry`). */
+const AUDIT_PHONE_LAYOUT = { identity: 'operation', actions: ['actions'] } as const;
+
+interface AuditPhoneEntryProps {
   event: AuditEvent;
-  /** Narrows the trail to one identifier, from the entry's own detail. */
-  onSearch: (needle: string) => void;
+  isOpen: boolean;
+  onOpen: (event: AuditEvent) => void;
 }
 
-const AuditEntry: React.FC<AuditEntryProps> = ({ event, onSearch }) => {
+/**
+ * One entry on a phone: the whole row is the control that opens it.
+ *
+ * The generic labelled row (`PhoneRow`) spent three label lines and a separate Details
+ * button on every entry, so a phone screen held two and a half operations and each had to
+ * be read field by field. An audit entry is one sentence and a verdict, so the row reads
+ * as one: the sentence and its outcome on the first line, the target and the time under
+ * it, and the rest behind the tap.
+ */
+const AuditPhoneEntry: React.FC<AuditPhoneEntryProps> = ({ event, isOpen, onOpen }) => {
   const t = useT();
-  const [isOpen, setIsOpen] = React.useState(false);
-  const category = categoryOf(event.action);
+  const eventCategory = categoryOf(event.action);
   const target = readableTarget(event);
-  const source = parseAuditSource(event.source_summary);
-  const tone = resultTone(event.result);
-  const detailId = `audit-detail-${event.id}`;
-  const targetId = event.target_id.trim();
-
-  const facts: Fact[] = [
-    { key: 'time', label: t('audit.field_time'), value: dayjs(event.occurred_at_ms).format('YYYY-MM-DD HH:mm:ss.SSS') },
-    { key: 'action', label: t('audit.field_action'), value: <code>{event.action}</code> },
-    {
-      key: 'target',
-      label: t('audit.field_target'),
-      value: <span className={styles['audit-mono']}>{[event.target_type, event.target_id].filter(Boolean).join(' / ') || '—'}</span>,
-    },
-    { key: 'result', label: t('audit.field_result'), value: <StatusLabel tone={tone}>{auditResultLabel(event.result, t)}</StatusLabel> },
-  ];
-  if (event.request_id) {
-    facts.push({
-      key: 'request',
-      label: t('audit.field_request'),
-      value: (
-        <span className={styles['audit-copyable']}>
-          <span className={styles['audit-mono']}>{event.request_id}</span>
-          <CopyButton text={event.request_id} />
-        </span>
-      ),
-    });
-  }
-  if (source.ip) facts.push({ key: 'ip', label: t('audit.field_ip'), value: source.ip });
-  if (source.userAgent) facts.push({ key: 'agent', label: t('audit.field_agent'), value: source.userAgent });
-  for (const [key, value] of Object.entries(event.details ?? {})) {
-    facts.push({ key: `detail-${key}`, label: key, value: <span className={styles['audit-mono']}>{formatDetailValue(value)}</span> });
-  }
-
+  const action = auditActionLabel(event.action, t);
   return (
-    <li className={clsx(styles['audit-entry'], isOpen && styles['audit-entry-open'])} data-testid="audit-entry">
+    <li>
       <button
         type="button"
-        className={styles['audit-summary']}
-        aria-expanded={isOpen}
-        aria-controls={detailId}
-        onClick={() => setIsOpen((open) => !open)}
+        className={clsx(styles['phone-entry'], isOpen && styles['phone-entry-open'])}
+        onClick={() => onOpen(event)}
+        aria-label={`${t('common.details')}: ${action}`}
+        data-testid="audit-entry"
       >
-        <span className={styles['audit-time']}>{dayjs(event.occurred_at_ms).format('HH:mm:ss')}</span>
-        <span className={clsx(styles['audit-icon'], styles[`tone-${tone}`])} aria-hidden="true">
-          {(category && CATEGORY_ICONS[category]) ?? <DatabaseOutlined />}
+        <span className={styles['audit-mark']} aria-hidden="true">
+          {(eventCategory && CATEGORY_ICONS[eventCategory]) ?? <DatabaseOutlined />}
         </span>
-        <span className={styles['audit-text']}>
-          <span className={styles['audit-sentence']}>
-            <span className={styles['audit-action']}>{auditActionLabel(event.action, t)}</span>
+        <span className={styles['phone-entry-body']}>
+          <span className={styles['phone-entry-line']}>
+            <span className={styles['audit-action']}>{action}</span>
+            <StatusLabel tone={resultTone(event.result)} className={styles['phone-entry-result']}>{auditResultLabel(event.result, t)}</StatusLabel>
+          </span>
+          <span className={styles['phone-entry-meta']}>
+            <span className={styles['audit-time']}>{dayjs(event.occurred_at_ms).format('HH:mm:ss')}</span>
             {target && <span className={styles['audit-target']}>{target}</span>}
-          </span>
-          <span className={styles['audit-meta']}>
-            {[category ? t(`audit.cat.${category}`) : undefined, source.ip].filter(Boolean).join(' · ')}
+            {!target && eventCategory && <span className={styles['audit-meta']}>{t(`audit.cat.${eventCategory}`)}</span>}
           </span>
         </span>
-        <StatusLabel tone={tone} className={styles['audit-result']}>{auditResultLabel(event.result, t)}</StatusLabel>
+        <RightOutlined className={styles['phone-entry-chevron']} aria-hidden="true" />
       </button>
-      {isOpen && (
-        <div id={detailId} className={styles['audit-detail']}>
-          <FactList facts={facts} emphasis="quiet" />
-          {/* The two questions a single entry raises: what else happened to this thing, and
-              what else did this one request do. Both are the trail's own search. */}
-          {(targetId || event.request_id) && (
-            <div className={styles['audit-detail-actions']}>
-              {targetId && (
-                <Button size="small" icon={<FilterOutlined />} onClick={() => onSearch(targetId)}>
-                  {t('audit.only_target')}
-                </Button>
-              )}
-              {event.request_id && (
-                <Button size="small" icon={<FilterOutlined />} onClick={() => onSearch(event.request_id)}>
-                  {t('audit.only_request')}
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </li>
   );
 };
@@ -174,25 +135,28 @@ function dayHeading(key: string, t: ReturnType<typeof useT>): string {
 }
 
 interface AuditTrailProps {
+  title: React.ReactNode;
   filters: AuditFilters;
   onFiltersChange: (next: AuditFilters) => void;
 }
 
 /**
- * AuditTrail reads the operator audit log as a timeline: one entry per operation, grouped
- * by day, each a sentence ("Deleted a provider  gemini") with its outcome, under a strip that
- * counts the window by outcome.
+ * AuditTrail is the audit page's workspace: outcome tabs that count the window, a search and
+ * filter row, and the trail as the console's one list surface - a frame per day, each row an
+ * operation read as a sentence with its target and outcome - with the full entry in a Drawer.
  *
- * The server folds a write's `attempt` row into the outcome it recorded, so an entry is an
+ * The server folds a write's `attempt` row into the outcome it recorded, so a row is an
  * operation rather than a pair of rows; an attempt that never recorded an outcome stays
  * visible as unfinished, because that is the one the operator needs to see. The filters are
  * owned by the caller (the page keeps them in its URL), so a link can open a filtered trail.
  */
-export const AuditTrail: React.FC<AuditTrailProps> = ({ filters, onFiltersChange }) => {
+export const AuditTrail: React.FC<AuditTrailProps> = ({ title, filters, onFiltersChange }) => {
   const t = useT();
   const { message } = AntdApp.useApp();
+  const isPhone = useIsPhoneViewport();
   const [searchDraft, setSearchDraft] = React.useState(filters.search);
   const [isExporting, setIsExporting] = React.useState(false);
+  const [openId, setOpenId] = React.useState<number>();
   const filtersRef = React.useRef(filters);
   filtersRef.current = filters;
 
@@ -242,14 +206,26 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ filters, onFiltersChange
     return groups;
   }, [events]);
 
+  const openIndex = openId === undefined ? -1 : events.findIndex((event) => event.id === openId);
+  const openEvent = openIndex >= 0 ? events[openIndex] : undefined;
+
   const isFiltered = filters.categories.length > 0 || filters.outcome !== 'all' || filters.search.trim() !== '' || filters.range !== 'all';
   const category = selectedCategory(filters);
   const hasCounts = summary.data !== undefined;
-  const update = (patch: Partial<AuditFilters>) => onFiltersChange({ ...filters, ...patch });
+  const isBlocked = query.isError && !query.data;
+  // A filter change closes the open entry: it may leave the list, and the Drawer must not
+  // reopen on its own when a later filter brings it back.
+  const update = (patch: Partial<AuditFilters>) => {
+    setOpenId(undefined);
+    onFiltersChange({ ...filters, ...patch });
+  };
   const refresh = () => {
     void query.refetch();
     void summary.refetch();
   };
+  const closeDetail = React.useCallback(() => setOpenId(undefined), []);
+  const navigateDetail = React.useCallback((event: AuditEvent) => setOpenId(event.id), []);
+  const searchFromDetail = (needle: string) => update({ search: needle });
 
   const onExport = async () => {
     setIsExporting(true);
@@ -262,8 +238,105 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ filters, onFiltersChange
     }
   };
 
+  const columns: ColumnsType<AuditEvent> = [
+    {
+      key: 'time',
+      title: t('audit.field_time'),
+      width: 96,
+      render: (_, event) => (
+        <span className={styles['audit-time']} title={dayjs(event.occurred_at_ms).format('YYYY-MM-DD HH:mm:ss.SSS')}>
+          {dayjs(event.occurred_at_ms).format('HH:mm:ss')}
+        </span>
+      ),
+    },
+    {
+      key: 'operation',
+      title: t('audit.col_operation'),
+      render: (_, event) => {
+        const eventCategory = categoryOf(event.action);
+        return (
+          <span className={styles['audit-operation']}>
+            <span className={styles['audit-mark']} aria-hidden="true">
+              {(eventCategory && CATEGORY_ICONS[eventCategory]) ?? <DatabaseOutlined />}
+            </span>
+            <span className={styles['audit-action']}>{auditActionLabel(event.action, t)}</span>
+          </span>
+        );
+      },
+    },
+    {
+      key: 'target',
+      title: t('audit.field_target'),
+      render: (_, event) => {
+        const target = readableTarget(event);
+        return target
+          ? <span className={styles['audit-target']} title={event.target_id}>{target}</span>
+          : <span className={styles['audit-none']}>—</span>;
+      },
+    },
+    {
+      key: 'category',
+      title: t('audit.col_category'),
+      width: 140,
+      render: (_, event) => {
+        const eventCategory = categoryOf(event.action);
+        return <span className={styles['audit-meta']}>{eventCategory ? t(`audit.cat.${eventCategory}`) : '—'}</span>;
+      },
+    },
+    {
+      key: 'source',
+      title: t('audit.field_ip'),
+      width: 160,
+      render: (_, event) => <span className={styles['audit-meta']}>{parseAuditSource(event.source_summary).ip ?? '—'}</span>,
+    },
+    {
+      key: 'result',
+      title: t('audit.field_result'),
+      width: 120,
+      render: (_, event) => <StatusLabel tone={resultTone(event.result)}>{auditResultLabel(event.result, t)}</StatusLabel>,
+    },
+    {
+      key: 'actions',
+      title: t('common.details'),
+      width: 92,
+      align: 'right',
+      render: (_, event) => (
+        <Button
+          size="small"
+          icon={<ProfileOutlined />}
+          onClick={(clickEvent) => {
+            clickEvent.stopPropagation();
+            setOpenId(event.id);
+          }}
+          aria-label={`${t('common.details')}: ${auditActionLabel(event.action, t)}`}
+          data-testid="audit-open"
+        >
+          {t('common.details')}
+        </Button>
+      ),
+    },
+  ];
+
   return (
-    <section className={styles.panel}>
+    <>
+      <PageHeader
+        title={title}
+        actions={(
+          <>
+            <RefreshButton
+              label={t('common.refresh')}
+              isRefreshing={(query.isFetching && !query.isFetchingNextPage) || summary.isFetching}
+              onRefresh={refresh}
+            />
+            <Tooltip title={t('audit.export_hint')}>
+              <Button icon={<DownloadOutlined />} loading={isExporting} onClick={() => void onExport()}>
+                {t('audit.export')}
+              </Button>
+            </Tooltip>
+          </>
+        )}
+      />
+
       <StatTiles
         className={styles['audit-stats']}
         ariaLabel={t('audit.outcome_filter')}
@@ -279,11 +352,11 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ filters, onFiltersChange
         }))}
       />
 
-      <div className="logs-toolbar">
+      <div className={clsx('logs-toolbar', styles.toolbar)}>
         <Input
           allowClear
           className={styles['audit-search']}
-          prefix={<SearchOutlined />}
+          prefix={<SearchOutlined aria-hidden="true" />}
           placeholder={t('audit.search_placeholder')}
           aria-label={t('audit.search_placeholder')}
           value={searchDraft}
@@ -308,63 +381,92 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ filters, onFiltersChange
           ]}
           onChange={(value: string) => update({ categories: value === 'all' ? [] : [...AUDIT_CATEGORIES[value]] })}
         />
-        <Segmented
-          size="small"
-          value={filters.range}
-          aria-label={t('audit.range_label')}
-          options={RANGES.map((range) => ({ value: range, label: t(`audit.range_${range}`) }))}
-          onChange={(value) => update({ range: value as AuditRange })}
-        />
-        <div className={styles['toolbar-actions']}>
-          {isFiltered && (
-            <Button type="link" size="small" onClick={() => onFiltersChange({ categories: [], outcome: 'all', search: '', range: 'all' })}>
-              {t('audit.clear_filters')}
-            </Button>
-          )}
-          <RefreshButton
-            isIconOnly
-            label={t('logs.reload')}
-            isRefreshing={(query.isFetching && !query.isFetchingNextPage) || summary.isFetching}
-            onRefresh={refresh}
+        {/* A phone has no width for four segments beside the category, so the range is the
+            same choice as a select sharing that row. */}
+        {isPhone ? (
+          <Select
+            className={styles['audit-range']}
+            value={filters.range}
+            aria-label={t('audit.range_label')}
+            options={RANGES.map((range) => ({ value: range, label: t(range === 'all' ? 'audit.range_all_time' : `audit.range_${range}`) }))}
+            onChange={(value: AuditRange) => update({ range: value })}
           />
-          <Tooltip title={t('audit.export_hint')}>
-            <Button icon={<DownloadOutlined />} loading={isExporting} onClick={() => void onExport()} aria-label={t('audit.export')}>
-              <span className={styles['action-label']}>{t('audit.export')}</span>
-            </Button>
-          </Tooltip>
-        </div>
+        ) : (
+          <Segmented
+            value={filters.range}
+            aria-label={t('audit.range_label')}
+            options={RANGES.map((range) => ({ value: range, label: t(`audit.range_${range}`) }))}
+            onChange={(value) => update({ range: value as AuditRange })}
+          />
+        )}
+        {isFiltered && (
+          <Button type="link" className={styles['clear-filters']} onClick={() => update({ categories: [], outcome: 'all', search: '', range: 'all' })}>
+            {t('audit.clear_filters')}
+          </Button>
+        )}
       </div>
 
-      {query.isError && !query.data ? (
+      {isBlocked && (
         <Alert
-          className="logs-alert"
+          className={styles['audit-alert']}
           type="error"
           showIcon
           title={t('audit.load_failed')}
           description={describeError(query.error)}
-          action={<Button size="small" onClick={() => void query.refetch()}>{t('logs.retry')}</Button>}
+          action={<Button size="small" onClick={() => void query.refetch()}>{t('common.retry')}</Button>}
         />
-      ) : query.isPending ? (
-        <PageLoading variant="block" />
-      ) : events.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={isFiltered ? t('audit.filter_empty') : t('audit.empty')} />
+      )}
+
+      {days.length === 0 ? (
+        <ResponsiveList<AuditEvent>
+          columns={columns}
+          dataSource={[]}
+          rowKey="id"
+          isLoading={query.isPending}
+          isBlocked={isBlocked}
+          emptyText={isFiltered ? t('audit.filter_empty') : t('audit.empty')}
+          phone={AUDIT_PHONE_LAYOUT}
+        />
       ) : (
         <div className={clsx(styles['audit-trail'], query.isPlaceholderData && styles['audit-trail-stale'])} data-testid="audit-trail">
           {days.map((day, index) => (
             <section key={day.key} className={styles['audit-day']} aria-label={dayHeading(day.key, t)}>
               <header className={styles['audit-day-head']}>
-                <span>{dayHeading(day.key, t)}</span>
+                <h2>{dayHeading(day.key, t)}</h2>
                 {/* The oldest day loaded may continue on the next page, and a count of what
                     happens to be loaded would read as the day's total. */}
                 {(index < days.length - 1 || !query.hasNextPage) && (
                   <span className={styles['audit-day-count']}>{t('audit.day_count', { n: day.events.length })}</span>
                 )}
               </header>
-              <ol className={styles['audit-list']}>
-                {day.events.map((event) => (
-                  <AuditEntry key={event.id} event={event} onSearch={(needle) => update({ search: needle })} />
-                ))}
-              </ol>
+              {/* Every day has the same columns, so their names are drawn once, above the
+                  first day; later days keep the header row for assistive technology. */}
+              {isPhone ? (
+                <ol className={clsx('data-table', styles['phone-list'])}>
+                  {day.events.map((event) => (
+                    <AuditPhoneEntry key={event.id} event={event} isOpen={event.id === openId} onOpen={navigateDetail} />
+                  ))}
+                </ol>
+              ) : (
+                <ResponsiveList<AuditEvent>
+                  columns={columns}
+                  dataSource={day.events}
+                  rowKey="id"
+                  isLoading={false}
+                  emptyText={null}
+                  phone={AUDIT_PHONE_LAYOUT}
+                  tableProps={{
+                    size: 'small',
+                    className: index > 0 ? 'data-table-head-hidden' : undefined,
+                    tableLayout: 'fixed',
+                    onRow: (event) => ({
+                      onClick: () => setOpenId(event.id),
+                      className: clsx(styles['audit-row'], event.id === openId && styles['audit-row-open']),
+                      'data-testid': 'audit-entry',
+                    } as React.HTMLAttributes<HTMLElement>),
+                  }}
+                />
+              )}
             </section>
           ))}
           <div className={styles['audit-footer']}>
@@ -378,6 +480,15 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ filters, onFiltersChange
           </div>
         </div>
       )}
-    </section>
+
+      <AuditEventDrawer
+        event={openEvent}
+        newer={openIndex > 0 ? events[openIndex - 1] : undefined}
+        older={openIndex >= 0 && openIndex < events.length - 1 ? events[openIndex + 1] : undefined}
+        onNavigate={navigateDetail}
+        onClose={closeDetail}
+        onSearch={searchFromDetail}
+      />
+    </>
   );
 };

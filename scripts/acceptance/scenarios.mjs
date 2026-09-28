@@ -653,13 +653,13 @@ export const SCENARIOS = [
   },
   {
     id: 'audit-trail',
-    name: 'the audit page reads the trail as sentences, counts it from the summary and filters on the server',
+    name: 'the audit page lists the trail as sentences on the shared list surface, opens an entry in a drawer, counts it from the summary and filters on the server',
     options: { routes: logsFixtures(auditRequests) },
     run: (context) => auditTrail({ ...context, auditRequests }),
   },
   {
     id: 'audit-trail-narrow',
-    name: 'the audit trail fits a phone',
+    name: 'the audit trail reads as one tappable row per entry on a phone',
     options: { routes: logsFixtures([]), viewport: { width: 360, height: 800 } },
     run: auditTrailNarrow,
   },
