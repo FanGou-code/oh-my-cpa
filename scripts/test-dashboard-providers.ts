@@ -344,6 +344,196 @@ const unbranded = aggregateProviders({ authFilesByType: [{ type: 'antigravity', 
 assert.equal(unbranded[0].logo, undefined, 'a non-plugin channel has no plugin logo');
 console.log('✓ Plugin-provided brand artwork verified');
 
+// Test 7b: API-key providers are credited by the keys that served them, never by family
+//
+// CPA labels every codex API-key request "codex", as it labels a Codex OAuth request. Joining on
+// that label credited a codex provider created a moment ago with the OAuth channel's traffic,
+// while the first codex provider took the whole label and the others read "no requests"; two rows
+// sharing the family's default name lost the second row entirely.
+const codexFamilyRow = (id: string, name: string, authIndex: string): ProviderItem => ({
+  id,
+  family: 'codex',
+  name,
+  protocol: 'OpenAI Responses',
+  auth_indexes: [authIndex],
+  disabled: false,
+  key_configured: true,
+});const byKey = aggregateProviders({
+  windowProviders: [{ id: 'codex', total: 7, success: 5, failure: 2, success_rate: 71.4 }],
+  windowCredentials: [
+    { auth_index: 'key-a', total: 3, failure: 1 },
+    { auth_index: 'key-b', total: 2, failure: 0 },
+  ],
+  authFilesByType: [{ type: 'codex', count: 1, disabled: 0 }],
+  configuredProviders: [
+    codexFamilyRow('codex-0', 'Codex / Responses', 'key-a'),
+    codexFamilyRow('codex-1', 'Codex / Responses', 'key-b'),
+    codexFamilyRow('codex-2', 'TEST1', 'key-c'),
+  ],
+});
+const trafficOf = (providerId: string) => byKey.find((row) => row.providerId === providerId);
+assert.equal(trafficOf('codex-0')?.total, 3, 'the first codex key is credited with its own requests');
+assert.equal(trafficOf('codex-0')?.failure, 1);
+assert.equal(trafficOf('codex-1')?.total, 2, 'a second row with the same default name keeps its own row and traffic');
+assert.equal(trafficOf('codex-2')?.total, 0, 'a provider no request used has no traffic');
+assert.equal(trafficOf('codex-2')?.successRate, null);
+assert.equal(trafficOf('codex-2')?.kind, 'ai_provider', 'a codex API-key provider is not the Codex OAuth channel');
+assert.equal(trafficOf('codex-2')?.credentials, 1, 'an API-key provider counts its own keys, not the channel files');
+const oauthCodex = byKey.find((row) => row.key === 'oauth:codex');
+assert.equal(oauthCodex?.total, 7, 'the OAuth channel keeps the traffic no API key answered');
+console.log('✓ API-key traffic joined by auth index verified');
+
+// Test 7c: a configured key provider does not swallow the OAuth channel of its family
+//
+// The channel row is built from the gateway's auth-file tally, and the configured row used to claim
+// every name of a family it touched - so configuring a Codex API key made the Codex OAuth channel
+// disappear from the panel, and the requests its files served were credited to no row at all.
+const withChannel = aggregateProviders({
+  windowProviders: [
+    { id: 'codex', total: 5, success: 5, failure: 0, success_rate: 100 },
+    { id: 'claude', total: 2, success: 2, failure: 0, success_rate: 100 },
+  ],
+  windowCredentials: [{ auth_index: 'key-a', total: 3, failure: 1 }],
+  authFilesByType: [
+    { type: 'codex', count: 2, disabled: 0 },
+    { type: 'claude', count: 1, disabled: 0 },
+  ],
+  configuredProviders: [codexFamilyRow('codex-0', 'Codex', 'key-a')],
+});
+const channelRow = withChannel.find((row) => row.key === 'oauth:codex');
+assert.ok(channelRow, 'the Codex OAuth channel still has its own row beside the configured provider');
+assert.equal(channelRow.credentials, 2, 'the channel reports its own auth files');
+assert.equal(channelRow.total, 5, 'the channel keeps the traffic no API key answered');
+assert.equal(withChannel.find((row) => row.providerId === 'codex-0')?.total, 3, 'the configured provider keeps its own keys');
+const claudeRow = withChannel.find((row) => row.key === 'oauth:claude');
+assert.equal(claudeRow?.total, 2, 'an unrelated channel is untouched');
+console.log('✓ A configured key provider leaves its family\'s OAuth channel in place');
+
+// Test 7d: an OpenAI-compatible relay that stands for a channel takes both halves of its traffic
+//
+// CPA labels its requests `openai-compatible-<name>` and strips that prefix everywhere the id is
+// normalized, so the label row is shared with the channel. Its key-indexed records are split out of
+// that row into `credentials[]`, which means a row credited only by the label would silently lose
+// every request one of its keys served.
+const relay = aggregateProviders({
+  windowProviders: [{ id: 'codex', total: 4, success: 4, failure: 0, success_rate: 100 }],
+  windowCredentials: [{ auth_index: 'relay-key', total: 6, failure: 1 }],
+  authFilesByType: [{ type: 'codex', count: 1, disabled: 0 }],
+  configuredProviders: [{
+    id: 'openai-compat-0',
+    family: 'openai-compatibility',
+    name: 'codex',
+    upstream_name: 'codex',
+    protocol: 'OpenAI Responses',
+    auth_indexes: ['relay-key'],
+    disabled: false,
+    key_configured: true,
+  }],
+});
+const channelRelayRow = relay.find((row) => row.providerId === 'openai-compat-0');
+assert.ok(channelRelayRow, 'the relay renders as the channel');
+assert.equal(channelRelayRow.total, 10, 'the relay takes its keys\' requests and the unindexed label traffic');
+assert.equal(channelRelayRow.failure, 1);
+assert.equal(relay.length, 1, 'the auth-file channel does not appear a second time beside it');
+console.log('✓ A relay that stands for a channel is credited from both its keys and its label');
+
+// Test 7e: an index two providers both publish is credited to neither
+//
+// CPA derives a credential's runtime index from the credential's own values, so one key entered twice
+// under one name resolves to one index and appears in both providers' `auth_indexes`. Crediting
+// whichever row came first printed a number that depended on the order of the provider list, and the
+// second provider reported a zero it had not earned.
+const sharedIndexScenario = (reversed: boolean) => {
+  const providers = [codexFamilyRow('codex-0', 'Codex One', 'key-shared'), codexFamilyRow('codex-1', 'Codex Two', 'key-shared')];
+  return aggregateProviders({
+    windowProviders: [{ id: 'codex', total: 5, success: 5, failure: 0, success_rate: 100 }],
+    windowCredentials: [{ auth_index: 'key-shared', total: 5, failure: 2 }],
+    configuredProviders: reversed ? [...providers].reverse() : providers,
+  });
+};
+const sharedForward = sharedIndexScenario(false);
+const sharedReversed = sharedIndexScenario(true);
+for (const [name, rows] of [
+  ['forward', sharedForward],
+  ['reversed', sharedReversed],
+] as const) {
+  assert.equal(rows.find((row) => row.providerId === 'codex-0')?.total, 0, `codex-0 reports nothing for an index two providers claim (${name})`);
+  assert.equal(rows.find((row) => row.providerId === 'codex-1')?.total, 0, `codex-1 reports nothing for an index two providers claim (${name})`);
+}
+assert.deepEqual(
+  sharedForward.map((row) => row.total),
+  sharedReversed.map((row) => row.total),
+  'the numbers do not depend on the order of the provider list',
+);
+console.log('✓ A multiply claimed auth index is credited to nobody, in any order');
+
+// Test 7f: two labels that differ only by separators stay two labels
+//
+// `normalizeProviderKey` strips separators, so it maps CPA's `deep-seek` and `deepseek` labels onto one
+// key - and the exact label lookup has to keep them apart, because CPA does.
+const separatorLabels = aggregateProviders({
+  windowProviders: [
+    { id: 'deep-seek', total: 6, success: 6, failure: 0, success_rate: 100 },
+    { id: 'deepseek', total: 4, success: 3, failure: 1, success_rate: 75 },
+  ],
+  configuredProviders: [
+    { id: 'openai-compat-0', family: 'openai-compatibility', name: 'Deep Seek', upstream_name: 'Deep-Seek', protocol: 'OpenAI Chat Completions', disabled: false, key_configured: true },
+    { id: 'openai-compat-1', family: 'openai-compatibility', name: 'DeepSeek', upstream_name: 'DeepSeek', protocol: 'OpenAI Chat Completions', disabled: false, key_configured: true },
+  ],
+});
+assert.equal(separatorLabels.find((row) => row.providerId === 'openai-compat-0')?.total, 6, 'Deep-Seek keeps its own label traffic');
+assert.equal(separatorLabels.find((row) => row.providerId === 'openai-compat-1')?.total, 4, 'DeepSeek keeps its own label traffic');
+console.log('✓ Labels that differ only by separators are credited apart');
+
+// Test 7g: a locally renamed relay does not become the channel it is renamed after
+//
+// The console stores provider names as an operator preference, so `name` may be any string the
+// operator typed while `upstream_name` stays what CPA carries. Deriving the channel identity from the
+// display name let a rename hand a relay the channel's traffic, its credential count and its row.
+const renamedRelay = aggregateProviders({
+  windowProviders: [
+    { id: 'codex', total: 9, success: 7, failure: 2, success_rate: 77.8 },
+    { id: 'myrelay', total: 3, success: 3, failure: 0, success_rate: 100 },
+  ],
+  windowCredentials: [{ auth_index: 'relay-key', total: 2, failure: 1 }],
+  authFilesByType: [{ type: 'codex', count: 2, disabled: 0 }],
+  configuredProviders: [{
+    id: 'openai-compat-0',
+    family: 'openai-compatibility',
+    name: 'CodeX',
+    upstream_name: 'myrelay',
+    protocol: 'OpenAI Chat Completions',
+    auth_indexes: ['relay-key'],
+    disabled: false,
+    key_configured: true,
+  }],
+});
+const relayUnderOwnName = renamedRelay.find((row) => row.providerId === 'openai-compat-0');
+assert.ok(relayUnderOwnName, 'the renamed relay keeps its own row');
+assert.equal(relayUnderOwnName.total, 5, 'the renamed relay is credited with its own label and its own keys, never the channel\'s requests');
+assert.equal(relayUnderOwnName.credentials, 1, 'the renamed relay reports the one key it holds, not the channel\'s files');
+assert.equal(relayUnderOwnName.kind, 'ai_provider', 'a rename does not make the row an OAuth channel');
+const survivingChannel = renamedRelay.find((row) => row.key === 'oauth:codex');
+assert.ok(survivingChannel, 'the channel whose name the relay borrowed keeps its own row');
+assert.equal(survivingChannel.total, 9, 'the channel keeps its own requests');
+console.log('✓ A renamed relay borrows nothing from the channel it is named after');
+
+// Test 7h: key rows without their label list are not credited at all
+//
+// Both halves come from one response because `credentials[]` is the part of the label rows the server
+// split out; taking the keys alone would count those requests twice.
+const keysWithoutLabels = aggregateProviders({
+  overviewProviders: [{ id: 'codex', credentials: 2, success: 5, failure: 2, total: 7, success_rate: 71.4 }],
+  windowCredentials: [{ auth_index: 'key-a', total: 3, failure: 1 }],
+  configuredProviders: [codexFamilyRow('codex-0', 'Codex', 'key-a')],
+});
+assert.equal(
+  keysWithoutLabels.reduce((sum, row) => sum + row.total, 0),
+  7,
+  'the panel never reports more requests than the window holds',
+);
+console.log('✓ Key rows without their label list are ignored');
+
 // Test 8: Summary stats calculation
 const summary = computeProviderSummary(aggregated);
 assert.equal(summary.totalProviders, 6);

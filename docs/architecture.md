@@ -1109,6 +1109,69 @@ page opts in, joins the overlay by that value, and keeps its own query cache ent
 so the dashboard's key picker — which only needs the mask — cannot be served the
 values, and the key page cannot be served the masks (ADR 0015).
 
+### Provider traffic is credited by the serving key
+
+A provider row's traffic number answers "how much did this provider serve", and CPA's
+`provider` label on a usage record cannot answer it. For an API-key request CPA writes
+the credential's *family* (`codex`, `claude`, `xai`, ...) — the same word it writes for
+the family's OAuth channel — so one label covers several distinct providers at once, and
+the matching it invites (family, display name, or substring) credits a provider that has
+served nothing with another surface's traffic. The fact that does identify the key is
+already in the record: the credential's runtime `auth_index`.
+
+`/management/dashboard/providers` therefore answers with two lists instead of one.
+`internal/repository/usage_model_analytics.go` groups the window by
+`(provider_key, CASE WHEN auth_type = 'apikey' THEN auth_index ELSE '' END)`;
+`internal/api/management_dashboard_providers.go` folds the empty-index rows into
+`providers[]` by the label CPA wrote — the OAuth channels, and records that name no
+credential — and the rest into `credentials[]`, one entry per key that served traffic.
+A configured provider's traffic is the sum over the indexes of its own keys, which
+the provider DTO publishes as `auth_indexes` (`internal/api/management_providers.go`),
+plus whatever a label attributes to it — never a general claim on indexless records, which
+carry no provider identity at all. Only an `openai-compatibility` row takes a label: exactly
+the `openai-compatible-<name>` label CPA derives from that provider's own name, or, when the
+row is one the console presents as an OAuth channel, that channel's label as channel rows have
+always been matched. A `{family}-api-key` provider takes neither — not even when its display
+name spells a family — because those records were served by different credentials, and family
+labels belong to the family's OAuth channel. Only a name **CPA** carries makes a row a channel:
+the display name is an operator preference the browser can change, so a rename must not hand a
+relay the channel whose name it borrows.
+
+Six properties are load-bearing:
+
+- **The join is an identity, never a heuristic.** No family match, no display-name
+  match, no substring and no "the provider's only key": each of those is wrong in the
+  case this rule exists for — a second provider of the same family, or a provider
+  created a moment ago — and a confidently wrong number is worse than a narrow one.
+- **Every configured provider is its own row.** Rows are no longer merged or skipped by
+  name, so two providers left at CPA's default name, and two keys of one family, each
+  report their own count instead of collapsing into one row and a dash. Only an
+  `openai-compatibility` row claims the gateway's label rows for its own name, which is
+  the identity its requests carry; a configured key provider whose display name spells a
+  channel is a different thing and leaves that channel's row standing.
+- **A provider's credential count is its own** (`key_entries`, or `auth_indexes` for a
+  key CPA reports without a mask). The gateway's per-type tally counts auth files, and
+  several of those type ids are shared with the API-key families, so taking the count
+  from there reported credentials the provider does not hold.
+- **A record that names no index is credited to nobody.** History written before the
+  index was captured, and a record whose credential CPA no longer holds — it keeps the index it
+  was served under, which no configured provider publishes — count toward no configured provider.
+  They stay in the totals and in the request list. The alternative is inference, and inference is
+  what produced the defect this rule exists for.
+- **An index two providers both publish is credited to neither.** CPA derives a credential's
+  runtime index from the credential itself, so one key entered twice under one name resolves to
+  a single index. Crediting whichever row the list happens to put first would print a number that
+  changes with the order of the provider list.
+- **A label is an identity, at CPA's precision.** `deep-seek` and `deepseek` are two labels to
+  CPA and stay two rows here; the console must not fold them through a normalizer that strips
+  separators to look a label up, and it must keep the label the server folded rather than
+  re-deriving it from a display name.
+
+The provider page reuses this aggregation rather than reimplementing it
+(`providerTrafficById` in `web/src/components/providers/providerOverview.ts`), so the
+dashboard's panel and the provider list cannot credit one request to two different
+rows.
+
 ### Provider key masks: which upstream key answered
 
 A request record names its provider, and an operator reading it needs one more
