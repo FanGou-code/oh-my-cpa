@@ -182,7 +182,7 @@ func TestRuntimePendingReleasesSlotsAndResumes(t *testing.T) {
 		t.Fatal("pending state invalid")
 	}
 	operationID := current.Turns[0].Traces[0].Result.OperationID
-	if _, err = runtime.Executor.Decide(context.Background(), PRINCIPAL, operationID, true, "", ""); err != nil {
+	if _, err = runtime.Executor.Decide(context.Background(), PRINCIPAL, operationID, true, ""); err != nil {
 		t.Fatal(err)
 	}
 	input.ConversationID = current.ID

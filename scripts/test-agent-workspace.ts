@@ -9,7 +9,14 @@
 import assert from 'node:assert/strict';
 import {
   failureKey,
-  pendingOperationCount,
+  isAwaitingAnswer,
+  EMPTY_DRAFT,
+  chooseOption,
+  chooseOther,
+  draftReply,
+  isQuestionAnswered,
+  operationQuestions,
+  pendingOperationID,
   formatDuration,
   groupCapabilities,
   hasRawResult,
@@ -27,7 +34,7 @@ import {
   turnDuration,
   turnLabelKey,
 } from '../web/src/pages/agent/state.ts';
-import type { Capability, Trace, Turn } from '../web/src/pages/agent/state.ts';
+import type { Capability, Conversation, Operation, Trace, Turn } from '../web/src/pages/agent/state.ts';
 
 let passed = 0;
 function check(name: string, run: () => void): void {
@@ -121,6 +128,13 @@ check('a directory query matches names and descriptions', () => {
   assert.deepEqual(groupCapabilities(items, 'nothing').length, 0);
 });
 
+check('a directory query can match the text the operator reads', () => {
+  const items = [capability('providers_list', 'read', 'List providers'), capability('keys_list', 'read', 'List keys')];
+  const localized: Record<string, string> = { providers_list: '列出提供方', keys_list: '列出客户端密钥' };
+  const groups = groupCapabilities(items, '密钥', item => `${item.name} ${localized[item.name]}`);
+  assert.deepEqual(groups.flatMap(group => group.items.map(item => item.name)), ['keys_list']);
+});
+
 check('a stream frame this build cannot render is refused rather than dispatched', () => {
   assert.equal(parseRunEvent(JSON.stringify({ type: 'delta', content: 'a' }))?.content, 'a');
   assert.equal(parseRunEvent(JSON.stringify({ type: 'telemetry' })), undefined);
@@ -128,14 +142,55 @@ check('a stream frame this build cannot render is refused rather than dispatched
   assert.equal(parseRunEvent(JSON.stringify([1, 2])), undefined);
 });
 
-check('the count of operations waiting on a decision spans the whole conversation', () => {
-  const turns = [
-    turn({ id: 'a', traces: [{ id: 't1', name: 'providers_set_status', result: { status: 'pending', operation_id: 'op-1' } }] }),
-    turn({ id: 'b', traces: [{ id: 't2', name: 'providers_list', result: { status: 'success', data: {} } }] }),
-    turn({ id: 'c', traces: [{ id: 't3', name: 'keys_create', result: { status: 'pending', operation_id: 'op-2' } }] }),
-  ];
-  assert.equal(pendingOperationCount(turns), 2);
-  assert.equal(pendingOperationCount([]), 0);
+check('the operation a conversation waits on is the pending call of its last turn', () => {
+  const conversation = (turns: Turn[]): Conversation => ({ id: 'c', revision: 1, model: 'm', client_key_fingerprint: 'k', turns, omitted: 0 });
+  const waiting = turn({ id: 'b', status: 'pending', traces: [
+    { id: 't2', name: 'providers_list', result: { status: 'success', data: {} } },
+    { id: 't3', name: 'keys_create', result: { status: 'pending', operation_id: 'op-2' } },
+  ] });
+  assert.equal(pendingOperationID(conversation([turn({ id: 'a' }), waiting])), 'op-2');
+  // A finished turn is not waiting, whatever an old trace in it still says.
+  assert.equal(pendingOperationID(conversation([waiting, turn({ id: 'c' })])), '');
+  assert.equal(pendingOperationID(undefined), '');
+});
+
+check('a turn stopped on a question is told apart from one awaiting approval', () => {
+  const asking = turn({ status: 'pending', traces: [{ id: 'q', name: 'ask_question', result: { status: 'pending', operation_id: 'op-q' } }] });
+  const approving = turn({ status: 'pending', traces: [{ id: 'w', name: 'keys_create', result: { status: 'pending', operation_id: 'op-w' } }] });
+  assert.equal(isAwaitingAnswer(asking), true);
+  assert.equal(isAwaitingAnswer(approving), false);
+  assert.equal(isAwaitingAnswer({ ...asking, status: 'success' }), false);
+});
+
+check('something else replaces a single choice and joins a multiple one', () => {
+  const single = { question: 'Window?', options: [{ label: '1h' }, { label: '24h' }] };
+  const multiple = { ...single, multi_select: true };
+  let draft = chooseOption(EMPTY_DRAFT, single, '1h');
+  draft = chooseOption(draft, single, '24h');
+  assert.deepEqual(draft.selected, ['24h']);
+  draft = { ...chooseOther(draft, single), text: ' later ' };
+  assert.deepEqual(draftReply(draft, single), { selected: [], text: 'later' });
+  // Typed text that is no longer chosen is kept for switching back, but never sent.
+  assert.deepEqual(draftReply(chooseOption(draft, single, '1h'), single), { selected: ['1h'], text: '' });
+  let many = chooseOption(chooseOption(EMPTY_DRAFT, multiple, '1h'), multiple, '24h');
+  many = { ...chooseOther(many, multiple), text: 'both' };
+  assert.deepEqual(draftReply(many, multiple), { selected: ['1h', '24h'], text: 'both' });
+  assert.deepEqual(chooseOption(many, multiple, '1h').selected, ['24h']);
+  assert.deepEqual(draftReply({ ...EMPTY_DRAFT, text: 'free' }, { question: 'Anything?' }), { selected: [], text: 'free' });
+});
+
+check('a question is sendable only when every question has a choice or typed text', () => {
+  const operation: Operation = { id: 'op', capability: 'ask_question', status: 'pending', human_input: 'answer', result: { status: 'pending' }, preview: { target: 'Which window?', changes: { questions: [
+    { question: 'Which window?', options: [{ label: '1h' }, { label: '24h' }] },
+    { question: 'Anything else?' },
+    { header: 'not a question' },
+  ] } } };
+  const questions = operationQuestions(operation);
+  assert.equal(questions.length, 2);
+  assert.equal(isQuestionAnswered([{ selected: ['1h'], text: '' }, { selected: [], text: '  ' }], questions.length), false);
+  assert.equal(isQuestionAnswered([{ selected: ['1h'], text: '' }, { selected: [], text: 'no' }], questions.length), true);
+  assert.equal(isQuestionAnswered([{ selected: ['1h'], text: '' }], questions.length), false);
+  assert.deepEqual(operationQuestions({ ...operation, preview: { target: 'x', changes: { name: 'provider' } } }), []);
 });
 
 check('a trace carries its capability name for the transcript to name', () => {

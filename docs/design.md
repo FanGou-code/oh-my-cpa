@@ -989,6 +989,18 @@ turn runs the send button becomes a stop button. Beneath the composer one line s
 the operator is about to cross: the Playground's spends the key's entitlement, the Agent's names
 what must be allowed before a message can leave.
 
+**A phone's composer starts at one line.** At the 640px phone breakpoint the box grows from one line
+to five rather than from two to ten, send sits beside the input instead of in a foot row, and the
+foot row appears only for a control that needs it (the Agent's reasoning effort); frame and note
+tighten with it. On a phone the conversation already shares its height with the keyboard, and the
+desktop layout left it a strip between two bars. A desktop keeps the two-line box.
+
+**The transcript scrolls only vertically.** Code blocks and tables scroll sideways inside their own
+frames, every other element is bounded by the column (a capability step's digest is one
+ellipsized line, never the width of its text), and the scroll box clips horizontally as a
+backstop, so a sideways swipe on a touch screen never drags the conversation. On a phone an answer
+uses the full column: Bubble List's 15% reserve beside an answer is removed below 640px.
+
 **Streaming is published on a cadence.** Both run loops coalesce deltas onto 40ms and every settled
 turn keeps its object identity, so the memoised transcript re-renders the answer that is growing
 and skips every one above it.
@@ -1013,7 +1025,11 @@ The panel is the capability directory: the registry itself - the same list the m
 grouped read / write / destructive in that fixed order, each group marked with a pip (`--meta`,
 `--warn`, `--danger`). It is an open list, one hairline row per capability with its description
 clamped to two lines and expanded on selection, because a card per entry made the borders louder
-than the names.
+than the names. A row reads in the console language: a localized title in `--fg`, the capability
+identifier beside it in small mono `--meta`, and a localized description; the filter matches both.
+An expanded row adds the registry's own description beneath a hairline rule, labelled as what the
+model is told, because that is the text the model decides from. A capability the console has no
+copy for reads as its identifier and registry description.
 
 **A turn is drawn in the order it happened.** A model may reason, say something, call
 capabilities, reason again and answer, so a turn is a sequence of segments - reasoning, answer text,
@@ -1024,19 +1040,37 @@ capability calls made in one model round are one X `ThoughtChain`. A turn resume
 grows in place below its earlier segments rather than appearing as a second answer, and copying the
 answer takes every text segment, without the reasoning.
 
-Each step of a chain names the capability, states its status in words, and digests its result to top-level
+Each step of a chain names the capability by its localized title with the identifier beside it, states its status in words, and digests its result to top-level
 scalars and collection sizes, with the whole document one disclosure away as a code block. The
 chain's own marks cover running, succeeded, failed and rejected; a call waiting on the operator or
 one whose outcome is partial, expired or unconfirmed carries a `--warn` attention glyph instead of
 being drawn as loading or failed.
 
-A prepared operation is decided on its own card directly beneath the chain that proposed it,
-because the decision belongs next to the call that asked for it. An open card carries the caution hue on its frame - the danger
-hue for a destructive capability - and returns to an ordinary record once decided. It leads with
-the target, lays a form-shaped change out as label/value rows (anything deeper stays JSON), and for
-a destructive capability asks for the target identifier to be typed; the challenge is never
-prefilled. Private input and the OAuth hand-off appear on the card when the capability needs them.
-While a conversation waits on a decision the composer's send becomes a labelled Resume action.
+A prepared operation is decided in an authorization dialog that opens by itself when a run stops
+for it: one decision, Deny or Allow, and deciding continues the run (ADR 0035). The dialog names
+the capability by its localized title and identifier, with its permission as a tag and its
+localized description, leads with the target,
+and lays a form-shaped change out as label/value rows (anything deeper stays JSON). A destructive
+capability draws Allow in the danger hue and adds a "cannot be undone" line; nothing is typed to
+confirm. Private input and the OAuth hand-off appear in the dialog when the capability needs them.
+Dismissing the dialog leaves the composer's send as a labelled "Review request" action that reopens
+it, and Resume remains only for a decided operation whose run could not continue by itself.
+
+A question the agent asks (`ask_question`) takes the composer's place instead of opening a dialog,
+because the answer above it is often what the operator reads to reply. It follows the shape the
+coding agents converged on (Claude Code's AskUserQuestion, Codex's request_user_input, OpenCode's
+question tool). The panel keeps the composer's frame with the accent hue on it. Several questions
+are one tab each plus a Review tab, and a tab carries a `--success` check once its question is
+answered, so the row is also the progress; a single question has no tabs and shows its short
+chip beside the text. Each option is a full-width row with its number as a key cap, the label, and
+its consequence in muted text beneath; the chosen row takes the accent edge, a light accent tint and
+a filled key cap. "Something else…" is always the last row and opens its answer field inside the
+row when chosen; in a single-choice question it replaces the options rather than adding to one. A
+digit picks a row and Enter moves on (the hint and key caps' shortcut hint are hidden without a
+keyboard); a single choice advances by itself, several choices wait for Next. The Review tab lists
+every question with its answer, each one a link back to its tab, and Submit sends them; Skip
+declines them all. Only the question scrolls, so the actions stay in view. The chain step and the
+turn footer for a pending question read "Awaiting your answer".
 
 Sending needs no separate grant. The line beneath the composer states that a message, and the OMC
 data the agent reads to answer it, go to the selected CPA model and its upstream (ADR 0027); sending
@@ -1411,6 +1445,16 @@ a defect: the request list carried a viewport `@media (max-width: 920px)` block 
 its container query, and it could only ever fire where the container already had (the
 container is at most `viewport − 64px`), so it was removed rather than left as an unexplained
 second breakpoint.
+
+### A page never moves sideways
+
+The console scrolls inside its content pane, and on a phone that pane scrolls vertically only.
+Content wider than a phone scrolls inside its own frame: a code block, a wide table, the token
+heatmap, and a strip of choices that cannot wrap (the price book's filters, the configuration
+page's section nav) swipes within the strip with `overscroll-behavior-x: contain`. Anything else
+is bounded by its column. A sideways swipe that moves the whole page or the whole conversation is a
+defect, and the phone-list and narrow-workspace probes measure the content pane's own
+`scrollWidth`, not only the document's.
 
 ### The phone's navigation is the rail, in a sheet
 

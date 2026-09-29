@@ -157,7 +157,7 @@ func (s *Service) registerKeys(registry *capability.Registry) error {
 		}
 		for _, key := range keys.Items {
 			if key.Index == input.Index && key.Fingerprint == input.Fingerprint {
-				return capability.Preview{Target: key.Fingerprint, Revision: keys.Revision, Changes: key, Challenge: key.Fingerprint}, nil
+				return capability.Preview{Target: key.Fingerprint, Revision: keys.Revision, Changes: key}, nil
 			}
 		}
 		return capability.Preview{}, errors.New("resource_conflict")

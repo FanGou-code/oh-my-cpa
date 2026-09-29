@@ -5,6 +5,7 @@ import { SearchOutlined } from '../../components/icons';
 import { CopyButton } from '../../components/common/CopyButton';
 import workspace from '../../components/workspace/Workspace.module.css';
 import { useI18n } from '../../i18n';
+import { capabilityDescription, capabilityTitle } from '../../i18n/capabilities';
 import { groupCapabilities } from './state';
 import type { Capability } from './state';
 import styles from './AgentPage.module.css';
@@ -26,6 +27,10 @@ export interface CapabilityDirectoryProps {
  * anything, and can tell a missing capability from a badly worded request. The groups are in a
  * fixed order rather than alphabetical, so the destructive set is always in the same place.
  *
+ * Each row reads in the operator's language, but the identifier stays beside the title and an
+ * expanded row also shows the registry's own description, because that is the text the model
+ * decides from and the localized sentence is only the console's paraphrase of it.
+ *
  * It is an open list, one hairline row per capability: a card per entry would turn a registry of
  * dozens into a column of boxes whose borders are louder than the names in them.
  */
@@ -33,7 +38,15 @@ export const CapabilityDirectory = React.memo(function CapabilityDirectory({ cap
   const { t } = useI18n();
   const [query, setQuery] = React.useState('');
   const [expanded, setExpanded] = React.useState('');
-  const groups = React.useMemo(() => groupCapabilities(capabilities, query), [capabilities, query]);
+  const groups = React.useMemo(
+    () => groupCapabilities(capabilities, query, capability => [
+      capability.name,
+      capabilityTitle(capability.name, t),
+      capabilityDescription(capability.name, capability.description, t),
+      capability.description,
+    ].join(' ')),
+    [capabilities, query, t],
+  );
 
   return (
     <div className={workspace['panel']} data-testid="agent-directory">
@@ -65,6 +78,8 @@ export const CapabilityDirectory = React.memo(function CapabilityDirectory({ cap
           <ul className={styles['capabilities']}>
             {group.items.map(capability => {
               const isExpanded = expanded === capability.name;
+              const title = capabilityTitle(capability.name, t);
+              const description = capabilityDescription(capability.name, capability.description, t);
               return (
                 <li key={capability.name} className={styles['capability']}>
                   <button
@@ -73,10 +88,19 @@ export const CapabilityDirectory = React.memo(function CapabilityDirectory({ cap
                     aria-expanded={isExpanded}
                     onClick={() => setExpanded(isExpanded ? '' : capability.name)}
                   >
-                    <code className={styles['capability-name']}>{capability.name}</code>
-                    <span className={clsx(styles['capability-description'], isExpanded && styles['is-expanded'])}>
-                      {capability.description}
+                    <span className={styles['capability-title']}>
+                      <span className={styles['capability-label']}>{title}</span>
+                      {title !== capability.name && <code className={styles['capability-name']}>{capability.name}</code>}
                     </span>
+                    <span className={clsx(styles['capability-description'], isExpanded && styles['is-expanded'])}>
+                      {description}
+                    </span>
+                    {isExpanded && description !== capability.description && (
+                      <span className={styles['capability-model']}>
+                        <span className={styles['capability-model-label']}>{t('agent.directory.model_description')}</span>
+                        <span lang="en">{capability.description}</span>
+                      </span>
+                    )}
                   </button>
                   <CopyButton text={capability.name} label={`${t('agent.directory.copy_name')}: ${capability.name}`} />
                 </li>

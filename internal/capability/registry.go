@@ -35,11 +35,14 @@ type Metadata struct {
 	Invalidates []string `json:"invalidates,omitempty"`
 	HumanInput  string   `json:"human_input,omitempty"`
 }
+
+// Preview is what the operator decides on: one target at one revision, and the change proposed
+// for it. Approval is a single allow-or-deny decision (ADR 0035); the revision, not a typed
+// confirmation, is what stops an approval from applying to a target that has since changed.
 type Preview struct {
-	Target    string `json:"target"`
-	Revision  string `json:"revision"`
-	Changes   any    `json:"changes"`
-	Challenge string `json:"challenge,omitempty"`
+	Target   string `json:"target"`
+	Revision string `json:"revision"`
+	Changes  any    `json:"changes"`
 }
 type Definition struct {
 	Metadata
@@ -72,7 +75,19 @@ func Register[I, O any](registry *Registry, metadata Metadata, prepare func(cont
 	if metadata.Permission == "destructive" && metadata.Risk != "high" {
 		return errors.New("destructive_requires_confirmation")
 	}
-	if metadata.HumanInput != "" && (metadata.Risk != "high" || metadata.HumanInput != "secret" && metadata.HumanInput != "oauth") {
+	// A secret or an OAuth flow completes a change, so it rides on a confirmed write. An answer is
+	// the operator replying to the agent: it changes nothing, so it is only allowed on a read.
+	switch metadata.HumanInput {
+	case "":
+	case "secret", "oauth":
+		if metadata.Risk != "high" {
+			return errors.New("invalid_human_input")
+		}
+	case "answer":
+		if metadata.Permission != "read" || prepare == nil {
+			return errors.New("invalid_human_input")
+		}
+	default:
 		return errors.New("invalid_human_input")
 	}
 	for _, adapter := range metadata.Adapters {
@@ -180,6 +195,6 @@ func (d *Definition) ValidateOutput(value any) (json.RawMessage, error) {
 // ResultSchema describes the executor envelope while retaining the definition's typed data contract.
 func (d *Definition) ResultSchema() map[string]any {
 	return map[string]any{"type": "object", "required": []string{"status"}, "additionalProperties": false, "properties": map[string]any{
-		"status": map[string]any{"type": "string"}, "data": d.OutputSchema, "code": map[string]any{"type": "string"}, "operation_id": map[string]any{"type": "string"}, "invalidates": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"status": map[string]any{"type": "string"}, "data": d.OutputSchema, "code": map[string]any{"type": "string"}, "detail": map[string]any{"type": "string"}, "operation_id": map[string]any{"type": "string"}, "invalidates": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 	}}
 }

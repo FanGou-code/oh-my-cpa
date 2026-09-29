@@ -17,7 +17,7 @@ const frame = event => `data: ${JSON.stringify(event)}\n\n`;
 
 export async function agentWorkspace({ base, page, check }) {
   let conversation = initial();
-  let operation = { id: 'operation-test', capability: 'providers_delete', status: 'pending', preview: { target: 'provider-test', challenge: 'provider-test', changes: { provider: 'provider-test' } }, result: { status: 'pending' } };
+  let operation = { id: 'operation-test', capability: 'providers_delete', permission: 'destructive', status: 'pending', preview: { target: 'provider-test', changes: { provider: 'provider-test' } }, result: { status: 'pending' } };
   const runs = [];
   const decisions = [];
   await page.route('**/agent/session', route => route.fulfill({ json: conversation }));
@@ -49,7 +49,12 @@ export async function agentWorkspace({ base, page, check }) {
   check('agent directory groups by permission', await directory.getByText('Destructive', { exact: true }).count() >= 1);
   await directory.getByLabel('Filter by name or description').fill('callable');
   check('agent directory filters to matches', await directory.getByText('providers_list').count() === 1 && await directory.getByText('providers_delete').count() === 0);
+  // Rows read in the operator's language, with the identifier beside the title, and the filter
+  // matches the text the operator reads rather than only the registry's English.
+  await directory.getByLabel('Filter by name or description').fill('the configured');
+  check('agent directory filters on the localized description', await directory.getByText('providers_list').count() === 1 && await directory.getByText('providers_delete').count() === 0);
   await directory.getByLabel('Filter by name or description').fill('');
+  check('agent directory titles each capability in the console language', await directory.getByText('Delete a provider', { exact: true }).count() === 1);
 
   // The empty state teaches the request shapes this deployment can answer.
   check('agent empty state offers example prompts', await page.getByText('Try one of these').count() === 1);
@@ -80,20 +85,19 @@ export async function agentWorkspace({ base, page, check }) {
   // Enter is the composer's primary submit. It is asserted rather than the button, because the two
   // are separate paths through the chat component and only the button used to work.
   await composer.press('Enter');
-  await page.getByLabel('Enter target identifier to confirm').waitFor();
+  // A run that stops for approval puts the request in front of the operator by itself.
+  const dialog = page.getByRole('dialog', { name: 'Authorization required' });
+  await dialog.waitFor();
   check('agent submits a message with Enter', runs.length === 1 && runs[0].message === 'Disable this provider', JSON.stringify(runs));
   check('agent sends the chosen reasoning effort and no consent flag', runs[0].reasoning_effort === 'high' && !('has_consent' in runs[0]), JSON.stringify(runs[0]));
-  check('agent cannot submit destructive approval without target challenge', await page.getByRole('button', { name: 'Approve execution' }).isDisabled());
-  await page.getByLabel('Enter target identifier to confirm').fill('provider-test');
-  // The approval gate opens only once the typed identifier has committed, and a click that
-  // lands first is swallowed rather than reported. Wait for the affordance the click depends on.
-  await until(async () => await page.getByRole('button', { name: 'Approve execution' }).isEnabled(), {
-    label: 'the approval gate to open for the typed target identifier',
-  });
-  await page.getByRole('button', { name: 'Approve execution' }).click();
+  check('agent opens the authorization dialog when a run stops for approval', await dialog.getByText('providers_delete').isVisible() && await dialog.getByText('provider-test').first().isVisible());
+  check('a destructive request is one decision, with nothing to type', await dialog.getByRole('textbox').count() === 0 && await dialog.getByText('This cannot be undone.').isVisible());
+  await dialog.getByRole('button', { name: 'Allow', exact: true }).click();
   await until(() => decisions.length === 1, { label: 'the approval decision reach the server' });
-  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  // Deciding is the whole interaction: the run continues without a separate Resume.
   await page.getByText('The approved operation completed.').waitFor();
+  check('agent posts one allow decision with no confirmation text', JSON.stringify(decisions[0]) === JSON.stringify({ approve: true }), JSON.stringify(decisions[0]));
+  check('agent continues the run once the operator decides', await dialog.count() === 0 || !(await dialog.isVisible()));
   check('agent resumes server conversation instead of supplying tool history', runs.length === 2 && runs[1].message === '' && !('messages' in runs[1]) && !('tools' in runs[1]));
   check('agent offers a new conversation once there is one to replace', await page.getByRole('button', { name: 'New conversation', exact: true }).isEnabled());
   await page.reload();
@@ -175,8 +179,27 @@ export async function agentStream({ base, page, check }) {
 }
 
 export async function agentNarrow({ base, page, check }) {
+  // A stored turn whose call returned one long unbroken field: its digest is a single line, and
+  // that line used to size the call chain - and with it the whole transcript - so a sideways swipe
+  // on a phone dragged the conversation off the screen.
+  const longValue = 'a-value-without-any-break-'.repeat(12);
+  await page.route('**/agent/session', route => route.fulfill({ json: { id: 'agent-test-session', revision: 2, model: 'vision-alias', client_key_fingerprint: 'playground-identity', omitted: 0, turns: [
+    { id: 'turn-wide', user: 'Which provider fails most?', reply: 'Checked.', parts: [{ type: 'tool', trace_id: 'call-wide' }, { type: 'text', content: 'Checked.' }], status: 'success', started_at_ms: Date.now() - 900, ended_at_ms: Date.now(), traces: [
+      { id: 'call-wide', name: 'database_query', result: { status: 'success', data: { columns: ['provider'], rows: [[longValue]], is_truncated: false, detail: longValue } } },
+    ] },
+  ] } }));
   await page.goto(`${base}/agent`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-testid="agent-page"]').waitFor();
+  await page.getByText('Checked.', { exact: true }).waitFor();
+  // scrollWidth counts content past a clipped edge too, so this proves nothing is wider than the
+  // column rather than only that the overflow is hidden.
+  const transcript = await page.evaluate(() => {
+    const box = document.querySelector('.ant-bubble-list-scroll-box');
+    return { scroll: box.scrollWidth, client: box.clientWidth, overflowX: getComputedStyle(box).overflowX };
+  });
+  check('a long call digest does not widen the transcript on a phone', transcript.scroll <= transcript.client && transcript.overflowX === 'hidden', JSON.stringify(transcript));
+  const composer = await page.locator('[data-testid="agent-page"] .ant-sender').boundingBox();
+  check('the Agent composer starts compact on a phone', composer.height <= 90, `height=${composer.height}`);
   // On a phone the target stays in the head rather than behind a settings sheet: which model a
   // message will reach is never one tap away.
   check('Agent keeps its key and model selectors visible on a phone', await page.getByLabel('Model', { exact: true }).isVisible() && await page.getByLabel('Client key', { exact: true }).isVisible());
@@ -242,4 +265,66 @@ export async function agentLive({ base, page, check }) {
   const positions = ['Compare failures by model first.', 'Let me read the last hour.', 'usage_aggregate', 'One model dominates.', 'Two models failed most.'].map(fragment => text.indexOf(fragment));
   check('a turn is drawn in the order the model worked', positions.every(position => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), JSON.stringify(positions));
   check('each stretch of reasoning keeps its own place', await turn.getByText('Thought process', { exact: true }).count() === 2);
+}
+
+/**
+ * `ask_question` takes the composer's place: the agent's options, a typed answer beside them, and
+ * sending the reply continues the run.
+ */
+export async function agentQuestion({ base, page, check }) {
+  let conversation = initial();
+  let operation = { id: 'question-test', capability: 'ask_question', permission: 'read', human_input: 'answer', status: 'pending', preview: { target: 'Which window?', changes: { questions: [
+    { question: 'Which window should the summary cover?', header: 'Window', options: [{ label: 'Last hour' }, { label: 'Last 24 hours', description: 'The console default' }] },
+    { question: 'Which providers matter?', options: [{ label: 'OpenAI' }, { label: 'Gemini' }], multi_select: true },
+  ] } }, result: { status: 'pending' } };
+  const runs = [];
+  const decisions = [];
+  await page.route('**/agent/session', route => route.fulfill({ json: conversation }));
+  await page.route('**/agent/operations/question-test', route => route.fulfill({ json: operation }));
+  await page.route('**/agent/operations/question-test/decision', async route => {
+    decisions.push(JSON.parse(route.request().postData()));
+    operation = { ...operation, status: 'success', result: { status: 'success', data: { answers: [] } } };
+    await route.fulfill({ json: operation });
+  });
+  await page.route('**/agent/run', async route => {
+    runs.push(JSON.parse(route.request().postData()));
+    const isFirst = runs.length === 1;
+    conversation = { ...conversation, revision: conversation.revision + 1, turns: [{ id: 'turn-question', user: 'Summarize usage', reply: isFirst ? '' : 'Here is the 24 hour summary.', status: isFirst ? 'pending' : 'success', started_at_ms: Date.now() - 800, ended_at_ms: Date.now(), traces: [{ id: 'tool-question', name: 'ask_question', result: isFirst ? { status: 'pending', operation_id: operation.id } : { status: 'success', data: { answers: [] } } }] }] };
+    await route.fulfill({ contentType: 'text/event-stream', body: frame({ type: 'state', conversation }) });
+  });
+  await page.goto(`${base}/agent`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid="agent-page"]').waitFor();
+  await page.getByLabel('Describe an OMC query or action').fill('Summarize usage');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  const panel = page.locator('[data-testid="agent-question"]');
+  await panel.waitFor();
+  check('a question takes the composer\'s place', await page.getByLabel('Describe an OMC query or action').count() === 0 && await panel.getByText('Which window should the summary cover?').isVisible());
+  // One question at a time behind a tab per question and a review tab, as the coding agents' own
+  // question prompts do; the first step offers Next, never a submit that could skip the rest.
+  check('each question has its own tab, and a review tab ends the row', await panel.getByRole('tab').count() === 3 && await panel.getByText('Question 1 of 2').isVisible());
+  const next = panel.getByRole('button', { name: 'Next', exact: true });
+  check('an unanswered question cannot move on', await next.isDisabled() && await panel.getByRole('button', { name: 'Submit answer', exact: true }).count() === 0);
+  // A digit picks its option, and a single choice moves on by itself because the pick is the answer.
+  await panel.press('2');
+  await panel.getByText('Which providers matter?').waitFor();
+  check('a digit picks a single-choice option and moves to the next question', await panel.getByRole('tab', { name: /Window/ }).getAttribute('aria-selected') === 'false'
+    && await panel.getByText('Question 2 of 2').isVisible());
+  // Choices are asserted by what they commit rather than by the click: the row renders its checked
+  // state from the draft it is handed, one render after the click that changed it.
+  const openAI = panel.getByRole('checkbox', { name: 'OpenAI' });
+  await openAI.click();
+  await until(async () => await openAI.getAttribute('aria-checked') === 'true', { label: 'the chosen option to commit' });
+  await panel.getByRole('checkbox', { name: 'Something else…' }).click();
+  await panel.getByLabel('Type your answer').fill('Exclude test keys');
+  await until(async () => await next.isEnabled(), { label: 'the second answer to allow Next' });
+  await next.click();
+  const submit = panel.getByRole('button', { name: 'Submit answer', exact: true });
+  await submit.waitFor();
+  check('the review step shows every answer before it is sent', await panel.getByText('Last 24 hours', { exact: true }).isVisible() && await panel.getByText('OpenAI, Exclude test keys', { exact: true }).isVisible());
+  await submit.click();
+  await page.getByText('Here is the 24 hour summary.').waitFor();
+  const answers = decisions[0]?.answer?.answers;
+  check('the reply carries each question\'s choices and typed text', decisions.length === 1 && decisions[0].approve === true
+    && JSON.stringify(answers) === JSON.stringify([{ selected: ['Last 24 hours'], text: '' }, { selected: ['OpenAI'], text: 'Exclude test keys' }]), JSON.stringify(decisions));
+  check('answering continues the run and returns the composer', runs.length === 2 && runs[1].message === '' && await page.getByLabel('Describe an OMC query or action').count() === 1);
 }

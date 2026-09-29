@@ -1,5 +1,5 @@
 import { ApiError, requestResponse } from '../../api/client';
-import type { Capability, Conversation, Operation } from './state';
+import type { Capability, Conversation, Operation, QuestionReply } from './state';
 
 /**
  * The Agent page's own endpoint surface.
@@ -24,10 +24,14 @@ export async function getOperation(id: string, signal?: AbortSignal): Promise<Op
   return (await requestResponse(`/agent/operations/${encodeURIComponent(id)}`, { signal })).json();
 }
 
-export async function decideOperation(id: string, approve: boolean, challenge: string, secret: string): Promise<Operation> {
+/**
+ * The operator's one decision on a prepared operation: allow or deny. A secret or an answer rides
+ * along only when the operation asks for it.
+ */
+export async function decideOperation(id: string, approve: boolean, input: { secret?: string; answer?: { answers: QuestionReply[] } } = {}): Promise<Operation> {
   return (await requestResponse(`/agent/operations/${encodeURIComponent(id)}/decision`, {
     method: 'POST',
-    body: JSON.stringify({ approve, challenge, secret }),
+    body: JSON.stringify({ approve, ...input }),
   })).json();
 }
 

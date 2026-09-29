@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	appcrypto "github.com/oh-my-cpa/oh-my-cpa/internal/crypto"
@@ -105,6 +106,11 @@ type DB struct {
 	writeGate *writeGate
 	// migrateUntil, when positive, is the last migration version Migrate applies.
 	migrateUntil int
+
+	// The read-only pool operator queries run on, opened on first use (readonly_query.go).
+	readOnlyOnce sync.Once
+	readOnly     *sql.DB
+	readOnlyErr  error
 }
 
 // Cipher returns the application cipher associated with this connection.
@@ -167,7 +173,11 @@ func (db *DB) Close() error {
 	if db == nil || db.SQL == nil {
 		return nil
 	}
-	return db.SQL.Close()
+	var readOnlyErr error
+	if db.readOnly != nil {
+		readOnlyErr = db.readOnly.Close()
+	}
+	return errors.Join(db.SQL.Close(), readOnlyErr)
 }
 
 func (db *DB) Migrate(ctx context.Context) error {

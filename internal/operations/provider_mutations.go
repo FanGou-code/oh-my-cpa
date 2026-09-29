@@ -97,7 +97,7 @@ func (s *Service) registerProviderMutations(registry *capability.Registry) error
 	metadata.Invalidates = []string{"providers", "management-providers", "pricing"}
 	if err := capability.Register(registry, metadata, func(ctx context.Context, input Target) (capability.Preview, error) {
 		current, err := s.FindProvider(ctx, input.ID)
-		return capability.Preview{Target: input.ID, Revision: current.Revision, Changes: current, Challenge: input.ID}, err
+		return capability.Preview{Target: input.ID, Revision: current.Revision, Changes: current}, err
 	}, func(ctx context.Context, input Target, revision, _ string) (Done, error) {
 		err := s.DeleteProvider(ctx, input.ID, revision)
 		return Done{err == nil}, err

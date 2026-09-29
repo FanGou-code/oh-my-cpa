@@ -5,6 +5,8 @@ import { languageLocale } from '../../i18n/language';
 export interface CapabilityReceipt {
   status: string;
   code?: string;
+  /** What to change, for a refusal its author can act on - a query naming an unreadable column. */
+  detail?: string;
   data?: unknown;
   operation_id?: string;
   invalidates?: string[];
@@ -53,10 +55,81 @@ export interface Conversation {
 export interface Operation {
   id: string;
   capability: string;
+  /** Recorded when the operation was prepared; older records carry none. */
+  permission?: string;
   status: string;
   human_input?: string;
-  preview: { target: string; changes?: unknown; challenge?: string };
+  preview: { target: string; changes?: unknown };
   result: CapabilityReceipt;
+}
+
+/** The capability the agent asks the operator through; registered by the server's agent runtime. */
+export const ASK_QUESTION = 'ask_question';
+
+/** One question the agent asks through `ask_question`, as its prepared operation carries it. */
+export interface AgentQuestion {
+  question: string;
+  header?: string;
+  options?: { label: string; description?: string }[];
+  multi_select?: boolean;
+}
+
+/** The operator's reply to one question: chosen option labels, typed text, or both. */
+export interface QuestionReply {
+  selected: string[];
+  text: string;
+}
+
+/** The questions of an `ask_question` operation, or none when the preview is not shaped like one. */
+export function operationQuestions(operation: Operation | undefined): AgentQuestion[] {
+  const changes = operation?.preview.changes as { questions?: unknown } | undefined;
+  if (!Array.isArray(changes?.questions)) return [];
+  return changes.questions.filter((item): item is AgentQuestion =>
+    typeof item === 'object' && item !== null && typeof (item as AgentQuestion).question === 'string');
+}
+
+/**
+ * What the operator has chosen for one question while the panel is open.
+ *
+ * "Something else" is a choice in its own right, as in the coding agents this follows: in a
+ * single-choice question it replaces the options rather than adding to one, so a reply never says
+ * two things at once. Its text is kept while unchosen, so switching back does not lose typing.
+ */
+export interface QuestionDraft {
+  selected: string[];
+  isOther: boolean;
+  text: string;
+}
+
+export const EMPTY_DRAFT: QuestionDraft = { selected: [], isOther: false, text: '' };
+
+export function chooseOption(draft: QuestionDraft, question: AgentQuestion, label: string): QuestionDraft {
+  if (!question.multi_select) return { ...draft, selected: [label], isOther: false };
+  const selected = draft.selected.includes(label) ? draft.selected.filter(item => item !== label) : [...draft.selected, label];
+  return { ...draft, selected };
+}
+
+export function chooseOther(draft: QuestionDraft, question: AgentQuestion): QuestionDraft {
+  if (!question.multi_select) return { ...draft, selected: [], isOther: true };
+  return { ...draft, isOther: !draft.isOther };
+}
+
+/** The reply a draft sends. A question without options is answered by its text alone. */
+export function draftReply(draft: QuestionDraft, question: AgentQuestion): QuestionReply {
+  const isTextChosen = draft.isOther || (question.options ?? []).length === 0;
+  return { selected: draft.selected, text: isTextChosen ? draft.text.trim() : '' };
+}
+
+/** Every question has something to send: a chosen option or typed text. */
+export function isQuestionAnswered(replies: QuestionReply[], count: number): boolean {
+  return replies.length === count && replies.every(reply => reply.selected.length > 0 || reply.text.trim() !== '');
+}
+
+/** The operation the conversation is waiting on, if its last turn stopped for one. */
+export function pendingOperationID(conversation: Conversation | undefined): string {
+  const last = conversation?.turns.at(-1);
+  if (last?.status !== 'pending') return '';
+  return [...last.traces].reverse().find(trace => trace.result.status === 'pending' && trace.result.operation_id)?.result.operation_id ?? '';
 }
 
 /**
@@ -140,6 +213,16 @@ export function isKnownTurnStatus(status: string): boolean {
 export function turnLabelKey(turn: Pick<Turn, 'status' | 'code'>): string {
   if (turn.status === 'error' && turn.code === 'cancelled') return 'agent.status.stopped';
   return isKnownTurnStatus(turn.status) ? `agent.status.${turn.status}` : 'agent.status.unknown';
+}
+
+/**
+ * A turn stopped on the agent's question rather than on a change to approve. Both are stored as
+ * `pending`; the footer says which, because "awaiting approval" under a question sends the
+ * operator looking for a dialog that is not there.
+ */
+export function isAwaitingAnswer(turn: Pick<Turn, 'status' | 'traces'>): boolean {
+  return turn.status === 'pending'
+    && (turn.traces ?? []).some(trace => trace.name === ASK_QUESTION && trace.result.status === 'pending');
 }
 
 /** The tone a status earns in the console's semantic palette. */
@@ -228,9 +311,10 @@ const FAILURE_KEYS: Record<string, string> = {
   agent_busy: 'agent.error.busy',
   agent_revision_conflict: 'agent.error.conflict',
   confirmation_pending: 'agent.error.pending',
-  confirmation_mismatch: 'agent.error.mismatch',
   confirmation_expired: 'agent.error.expired',
   secret_required: 'agent.error.secret',
+  answer_required: 'agent.error.answer',
+  invalid_answer: 'agent.error.answer',
   capability_forbidden: 'agent.error.forbidden',
   capability_unavailable: 'agent.error.unavailable',
   invalid_parameters: 'agent.error.parameters',
@@ -258,7 +342,6 @@ const FAILURE_KEYS: Record<string, string> = {
   schema_budget_exceeded: 'agent.error.budget',
   conversation_budget_exceeded: 'agent.error.budget',
   agent_document_too_large: 'agent.error.budget',
-  invalid_confirmation: 'agent.error.mismatch',
   demo_operation_refused: 'demo.blocked',
 };
 
@@ -403,17 +486,6 @@ export function turnDuration(turn: Turn): number | undefined {
   return turn.ended_at_ms - turn.started_at_ms;
 }
 
-/** Whether the conversation is waiting on a human decision, and for how many operations. */
-export function pendingOperationCount(turns: Turn[]): number {
-  let count = 0;
-  for (const turn of turns) {
-    for (const trace of turn.traces) {
-      if (trace.result.status === 'pending') count += 1;
-    }
-  }
-  return count;
-}
-
 export function isAwaitingApproval(conversation: Conversation | undefined): boolean {
   const last = conversation?.turns.at(-1);
   return last?.status === 'pending';
@@ -433,10 +505,13 @@ export interface CapabilityGroup {
  * The order is fixed rather than alphabetical so the destructive set is always in the same
  * place - it is the one that needs reading before approving anything.
  */
-export function groupCapabilities(capabilities: Capability[], query: string): CapabilityGroup[] {
+export function groupCapabilities(
+  capabilities: Capability[],
+  query: string,
+  searchText: (capability: Capability) => string = capability => `${capability.name} ${capability.description}`,
+): CapabilityGroup[] {
   const needle = query.trim().toLowerCase();
-  const matched = capabilities.filter(capability =>
-    !needle || capability.name.toLowerCase().includes(needle) || capability.description.toLowerCase().includes(needle));
+  const matched = capabilities.filter(capability => !needle || searchText(capability).toLowerCase().includes(needle));
   return PERMISSION_ORDER
     .map(permission => ({ permission, items: matched.filter(item => item.permission === permission).sort((left, right) => left.name.localeCompare(right.name)) }))
     .filter(group => group.items.length > 0);

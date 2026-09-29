@@ -58,7 +58,7 @@ func (s *Service) authFile(ctx context.Context, target CredentialTarget) (manage
 }
 func (s *Service) credentialPreview(ctx context.Context, target CredentialTarget, changes any) (capability.Preview, error) {
 	file, err := s.authFile(ctx, target)
-	return capability.Preview{Target: target.Name, Revision: s.revision(file), Changes: changes, Challenge: target.Name}, err
+	return capability.Preview{Target: target.Name, Revision: s.revision(file), Changes: changes}, err
 }
 
 // SetCredentialStatus shares the same write gate with console updates and provider writes.
@@ -135,9 +135,7 @@ func (s *Service) registerOAuth(registry *capability.Registry) error {
 	metadata := Meta("oauth_set_status", "Enable or disable one OAuth credential after confirming its identity.", "write", "high")
 	metadata.Invalidates = []string{"management-auth-files", "management-quota"}
 	if err := capability.Register(registry, metadata, func(ctx context.Context, input StatusInput) (capability.Preview, error) {
-		preview, err := s.credentialPreview(ctx, CredentialTarget{input.Name, input.AuthIndex}, input)
-		preview.Challenge = ""
-		return preview, err
+		return s.credentialPreview(ctx, CredentialTarget{input.Name, input.AuthIndex}, input)
 	}, func(ctx context.Context, input StatusInput, revision, _ string) (Done, error) {
 		err := s.SetCredentialStatus(ctx, CredentialTarget{input.Name, input.AuthIndex}, input.IsDisabled, revision)
 		return Done{err == nil}, err
@@ -197,9 +195,7 @@ func (s *Service) registerOAuth(registry *capability.Registry) error {
 		if err != nil {
 			return capability.Preview{}, err
 		}
-		preview, err := s.credentialPreview(ctx, CredentialTarget{Name: input.Name, AuthIndex: input.AuthIndex}, map[string]any{"credential": CredentialTarget{Name: input.Name, AuthIndex: input.AuthIndex}, "fields": fields})
-		preview.Challenge = ""
-		return preview, err
+		return s.credentialPreview(ctx, CredentialTarget{Name: input.Name, AuthIndex: input.AuthIndex}, map[string]any{"credential": CredentialTarget{Name: input.Name, AuthIndex: input.AuthIndex}, "fields": fields})
 	}, func(ctx context.Context, input FieldsInput, revision, _ string) (Done, error) {
 		if s.UpdateCredentialFields == nil {
 			return Done{}, errors.New("capability_unavailable")

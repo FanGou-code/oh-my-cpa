@@ -25,7 +25,7 @@ func TestRegistrySchemaAndDiscovery(t *testing.T) {
 	registry := NewRegistry()
 	metadata := testMetadata()
 	prepare := func(context.Context, testInput) (Preview, error) {
-		return Preview{Target: "resource", Revision: "v1", Challenge: "resource"}, nil
+		return Preview{Target: "resource", Revision: "v1"}, nil
 	}
 	execute := func(context.Context, testInput, string, string) (testOutput, error) { return testOutput{true}, nil }
 	if err := Register(registry, metadata, prepare, execute); err != nil {
@@ -77,7 +77,7 @@ func TestExecutorConfirmationReplayAndRevocation(t *testing.T) {
 	calls := 0
 	isAllowed := true
 	err = Register(registry, testMetadata(), func(context.Context, testInput) (Preview, error) {
-		return Preview{Target: "resource", Revision: "v1", Challenge: "resource"}, nil
+		return Preview{Target: "resource", Revision: "v1"}, nil
 	}, func(_ context.Context, _ testInput, revision, _ string) (testOutput, error) {
 		if revision != "v1" {
 			t.Fatal("lost revision")
@@ -97,23 +97,20 @@ func TestExecutorConfirmationReplayAndRevocation(t *testing.T) {
 	if _, err = executor.Get(ctx, Principal{ID: "other", Adapter: "mcp", Allowed: principal.Allowed}, result.OperationID); err == nil {
 		t.Fatal("cross principal read")
 	}
-	if _, err = executor.Decide(ctx, principal, result.OperationID, true, "resource", ""); err == nil {
+	if _, err = executor.Decide(ctx, principal, result.OperationID, true, ""); err == nil {
 		t.Fatal("external approval")
 	}
 	admin := Principal{ID: "administrator", Adapter: "agent", IsAdmin: true}
-	if _, err = executor.Decide(ctx, admin, result.OperationID, true, "wrong", ""); err == nil {
-		t.Fatal("challenge bypass")
-	}
 	isAllowed = false
-	if _, err = executor.Decide(ctx, admin, result.OperationID, true, "resource", ""); err == nil {
+	if _, err = executor.Decide(ctx, admin, result.OperationID, true, ""); err == nil {
 		t.Fatal("revoked grant executed")
 	}
 	isAllowed = true
-	operation, err := executor.Decide(ctx, admin, result.OperationID, true, "resource", "")
+	operation, err := executor.Decide(ctx, admin, result.OperationID, true, "")
 	if err != nil || operation.Status != "success" || calls != 1 {
 		t.Fatalf("execute: %+v %v", operation, err)
 	}
-	if _, err = executor.Decide(ctx, admin, result.OperationID, true, "resource", ""); err != nil || calls != 1 {
+	if _, err = executor.Decide(ctx, admin, result.OperationID, true, ""); err != nil || calls != 1 {
 		t.Fatal("replayed execution")
 	}
 	result, err = executor.Invoke(ctx, principal, "test_action", json.RawMessage(`{"target":"resource"}`), "")
@@ -128,7 +125,7 @@ func TestExecutorConfirmationReplayAndRevocation(t *testing.T) {
 	if _, err = executor.Store.Save(ctx, "operation", operation.ID, operation.revision, time.Now().Add(time.Hour), operation); err != nil {
 		t.Fatal(err)
 	}
-	operation, err = executor.Decide(ctx, admin, operation.ID, true, "resource", "")
+	operation, err = executor.Decide(ctx, admin, operation.ID, true, "")
 	if err != nil || operation.Status != "expired" || calls != 1 {
 		t.Fatal("expired execution")
 	}
