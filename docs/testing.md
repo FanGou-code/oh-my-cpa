@@ -48,7 +48,9 @@ Rules that keep the suite fast and honest:
   `scripts/install-chromium.test.mjs` does.
 - **Keep the fixtures hermetic.** Browser fixtures build their environment with
   `scripts/acceptance/environment.mjs`; never read the operator's `.env`, network or
-  data directory.
+  data directory. Calendar fixtures must use the console's configured timezone rather
+  than the host timezone; the dashboard heatmap fixtures use the default UTC calendar,
+  with a script self-test spanning hosts on opposite sides of a UTC date boundary.
 
 ## 2. Registering a new test
 
@@ -94,6 +96,14 @@ How `check:ui` chooses scenarios (`scripts/acceptance/check-ui-plan.mjs`):
 Never add a skip switch or narrow a planner rule to make a slow run go away. If the
 selection is wider than the change warrants, add a path rule or a scenario mapping,
 with a test in `scripts/ui-impact.test.mjs` or `scripts/check-ui-plan.test.mjs`.
+
+Agent/Playground recovery assertions belong at the lowest boundary that owns the behaviour:
+channel-driven facade tests for execution lifetime and replay, injectable transport logic tests
+for connection failures, and the existing `agent-live` / `playground` probes for actual browser
+reload and rendering. Live elapsed labels are independent external-store consumers: their clock
+and hidden-tab suspension are logic tests, while the Agent probe checks visible tenths and the
+light Stop border. Stream-coalescing probes exclude only elapsed-label mutations, not answer
+mutations, because the clock does not publish through the transcript's run hook.
 
 ## 4. When CI fails
 
