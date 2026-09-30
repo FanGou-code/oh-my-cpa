@@ -105,6 +105,21 @@ and hidden-tab suspension are logic tests, while the Agent probe checks visible 
 light Stop border. Stream-coalescing probes exclude only elapsed-label mutations, not answer
 mutations, because the clock does not publish through the transcript's run hook.
 
+### Feedback regressions
+
+- `scripts/check-feedback.test.mjs` checks Ant Design feedback bindings and aliases (named and namespace
+  imports, `App.useApp()` results and modal hooks), scope shadowing, false positives in comments,
+  strings and type-only imports, legal confirmations, diagnostic locations and the
+  feedback module exemption. It is automatically discovered by the repository self-test runner.
+- The `oauth-management` browser scenario checks that ordinary copy acknowledgements cannot evict
+  a persistent quota report, another refresh replaces it, and its close action removes it. It also
+  checks one credential-aware authorization toast for a unique new credential, an ambiguous result
+  and a failed credential-list refresh, including the action that reveals the provider collection.
+  Cross-stack OAuth acceptance dismisses the completion toast before exercising drawer reopening,
+  so the notification cannot cover the close action or consume the bounded success-state window.
+- The `agent-failure` scenario retries a failed capability-directory read without losing the
+  composer draft, then checks the refused-message retry and the accepted-run failure surfaces.
+
 ## 4. When CI fails
 
 - Probe shards upload `tmp/probe-failure/`: for every failed scenario, whether a check

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Button, Dropdown, Tooltip } from 'antd';
+import { Button, Dropdown, Tooltip } from 'antd';
 import { AssistantRuntimeProvider, ComposerPrimitive, SelectionToolbarPrimitive, ThreadPrimitive } from '@assistant-ui/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -39,6 +39,7 @@ import type { AgentViewState } from './tools/AgentViewContext';
 import { AgentToolUIs } from './tools/registry';
 import { RunRejectedError, useAgentRun } from './useAgentRun';
 import styles from './AgentPage.module.css';
+import { LoadFailure, Notice } from '../../components/feedback';
 
 /**
  * Starting questions, not templates.
@@ -275,26 +276,22 @@ export function AgentPage() {
   const runError = localError || errorCode;
   const notices = (
     <>
-      {isDemo && <Alert type="info" title={t('agent.demo')} />}
+      {isDemo && <Notice tone="info" title={t('agent.demo')} />}
       {session.isError && (
-        <Alert
-          type="error"
-          title={t('agent.session.failed')}
-          action={<Button size="small" onClick={() => void session.refetch()}>{t('common.retry')}</Button>}
-        />
+        <LoadFailure title={t('agent.session.failed')} onRetry={() => void session.refetch()} />
       )}
       {!isDemo && keys.isSuccess && keys.data.keys.length === 0 && (
-        <Alert type="info" title={t('pg.no_keys')} action={<Link to="/api-keys">{t('pg.manage_keys')}</Link>} />
+        <Notice tone="info" title={t('pg.no_keys')} action={<Link to="/api-keys">{t('pg.manage_keys')}</Link>} />
       )}
       {!isDemo && !!fingerprint && directory.isSuccess && directory.data.models.length === 0 && (
-        <Alert type="info" title={t('pg.no_models')} action={<Link to="/ai-providers">{t('pg.manage_models')}</Link>} />
+        <Notice tone="info" title={t('pg.no_models')} action={<Link to="/ai-providers">{t('pg.manage_models')}</Link>} />
       )}
-      {!!session.data?.omitted && <Alert type="info" title={t('agent.omitted')} />}
+      {!!session.data?.omitted && <Notice tone="info" title={t('agent.omitted')} />}
       {rejection && (
-        <Alert
-          type="warning"
+        <Notice
+          tone="warning"
           data-testid="agent-rejected"
-          closable={{ onClose: () => setRejection(undefined) }}
+          onClose={() => setRejection(undefined)}
           title={t('agent.rejected', { reason: t(failureKey(rejection.code)) })}
           description={<code>{rejection.code}</code>}
           action={(
@@ -314,9 +311,9 @@ export function AgentPage() {
         />
       )}
       {runError && (
-        <Alert
-          type="error"
-          closable={{ onClose: () => { setLocalError(''); clearError(); } }}
+        <Notice
+          tone="error"
+          onClose={() => { setLocalError(''); clearError(); }}
           title={t(failureKey(runError))}
           description={<code>{runError}</code>}
         />
@@ -445,7 +442,7 @@ export function AgentPage() {
                 {
                   key: 'directory',
                   label: t('agent.directory'),
-                  content: <CapabilityDirectory capabilities={capabilities.data ?? []} isPending={capabilities.isPending} isError={capabilities.isError} />,
+                  content: <CapabilityDirectory capabilities={capabilities.data ?? []} isPending={capabilities.isPending} isError={capabilities.isError} onRetry={() => void capabilities.refetch()} />,
                 },
                 { key: 'details', label: t('agent.details'), content: <CallDetails trace={selectedTrace} /> },
               ],

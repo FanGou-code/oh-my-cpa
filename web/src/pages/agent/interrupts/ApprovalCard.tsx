@@ -1,6 +1,7 @@
 import React from 'react';
-import { Alert, Button, Input, Skeleton, Tag } from 'antd';
+import { Button, Input, Skeleton, Tag } from 'antd';
 import type { ToolApprovalResponse } from '@assistant-ui/react';
+import { Notice } from '../../../components/feedback';
 import { CodeBlock } from '../../../components/workspace/ModelMarkdown';
 import workspace from '../../../components/workspace/Workspace.module.css';
 import { useI18n } from '../../../i18n';
@@ -107,7 +108,7 @@ export function ApprovalCard({ operation, capability, respond }: ApprovalCardPro
       {operation.preview.changes !== undefined && !entries && (
         <CodeBlock lang="json" block>{JSON.stringify(operation.preview.changes, null, 2)}</CodeBlock>
       )}
-      {isDestructive && <Alert type="error" showIcon title={t('agent.operation.irreversible')} />}
+      {isDestructive && <Notice tone="error" title={t('agent.operation.irreversible')} />}
       {operation.human_input === 'secret' && (
         <div className={workspace['field']}>
           <label className={workspace['field-label']} htmlFor={`secret-${operation.id}`}>{t('agent.private_input')}</label>

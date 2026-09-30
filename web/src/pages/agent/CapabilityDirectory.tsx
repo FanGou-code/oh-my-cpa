@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Input } from 'antd';
+import { Input } from 'antd';
 import { clsx } from 'clsx';
 import { SearchOutlined } from '../../components/icons';
 import { CopyButton } from '../../components/common/CopyButton';
@@ -9,6 +9,7 @@ import { capabilityDescription, capabilityTitle } from '../../i18n/capabilities'
 import { groupCapabilities } from './state';
 import type { Capability } from './state';
 import styles from './AgentPage.module.css';
+import { LoadFailure } from '../../components/feedback';
 
 /** The pip each permission group carries: reading is not a verdict, changing is a caution, destroying is the alarm. */
 const PERMISSION_TONE: Record<string, string> = { read: 'default', write: 'warning', destructive: 'error' };
@@ -17,6 +18,7 @@ export interface CapabilityDirectoryProps {
   capabilities: Capability[];
   isPending: boolean;
   isError: boolean;
+  onRetry: () => void;
 }
 
 /**
@@ -34,7 +36,7 @@ export interface CapabilityDirectoryProps {
  * It is an open list, one hairline row per capability: a card per entry would turn a registry of
  * dozens into a column of boxes whose borders are louder than the names in them.
  */
-export const CapabilityDirectory = React.memo(function CapabilityDirectory({ capabilities, isPending, isError }: CapabilityDirectoryProps) {
+export const CapabilityDirectory = React.memo(function CapabilityDirectory({ capabilities, isPending, isError, onRetry }: CapabilityDirectoryProps) {
   const { t } = useI18n();
   const [query, setQuery] = React.useState('');
   const [expanded, setExpanded] = React.useState('');
@@ -65,7 +67,7 @@ export const CapabilityDirectory = React.memo(function CapabilityDirectory({ cap
           onChange={event => setQuery(event.target.value)}
         />
       </div>
-      {isError && <div className={styles['directory-note']}><Alert type="error" title={t('agent.error.gateway')} /></div>}
+      {isError && <div className={styles['directory-note']}><LoadFailure title={t('agent.error.gateway')} onRetry={onRetry} /></div>}
       {isPending && <p className={styles['directory-note']}>{t('common.loading')}</p>}
       {!isPending && !isError && groups.length === 0 && <p className={styles['directory-note']}>{t('agent.directory.empty')}</p>}
       {groups.map(group => (

@@ -172,6 +172,10 @@ export async function agentWorkspace({ base, page, check }) {
  */
 export async function agentFailureCopy({ base, page, check }) {
   let mode = 'rejected';
+  let isDirectoryUnavailable = true;
+  await page.route('**/capabilities', route => isDirectoryUnavailable
+    ? route.fulfill({ status: 502, json: { error: 'directory unavailable' } })
+    : route.fallback());
   await page.route('**/agent/run', route => {
     const body = mode === 'rejected'
       ? [runError('client_key_unavailable')]
@@ -182,6 +186,14 @@ export async function agentFailureCopy({ base, page, check }) {
   await page.locator('[data-testid="agent-page"]').waitFor();
   const composer = page.getByLabel('Describe an OMC query or action');
   await composer.fill('Delete a provider');
+  const directory = page.getByTestId('agent-directory');
+  const retryDirectory = directory.getByRole('button', { name: 'Retry', exact: true });
+  await retryDirectory.waitFor();
+  isDirectoryUnavailable = false;
+  await retryDirectory.click();
+  await directory.getByText('providers_delete', { exact: true }).waitFor();
+  check('retrying the capability directory preserves the composer draft',
+    await composer.inputValue() === 'Delete a provider' && await directory.locator('.omc-load-failure').count() === 0);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   const rejected = page.locator('[data-testid="agent-rejected"]');
   await rejected.waitFor();
