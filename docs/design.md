@@ -1453,7 +1453,7 @@ and leaves the *stream* alone (`web/src/utils/scrollSmoothing.ts`, ADR 0046):
 | --- | --- |
 | Wheel notch (line/page mode, or a pixel-mode notch off Apple platforms) | Glides over `scroll` to exactly where it would have jumped |
 | Arrow keys, Page Up/Down, Space, Home, End outside an editable control or widget | Glide over `scroll` |
-| Trackpad, Apple-platform pixel wheels, touch | Native, never intercepted |
+| Trackpad, Apple-platform pixel wheels, touch | Never glided. A finger on the request list moves it directly (§8) |
 | Ctrl/⌘, Shift or Alt wheel; horizontal wheel | Native (zoom, sideways scroll) |
 | Programmatic scroll (a correction, `scrollIntoView`) | Native; it also stops any glide on that scroller |
 
@@ -1461,11 +1461,18 @@ Each notch retargets the glide from where it is, so a turning wheel accelerates 
 the glide follows the nearest scroller under the pointer that can still move, and stops chaining at a
 scroller that contains its overscroll, as the native scroll does. A virtualized list (the request
 list, a Select's option popup) is moved through its own wheel handling, one step per frame, because
-it owns its offset. It applies a step only once React commits it, often frames behind, so an offset
-anywhere between where the glide started and where it has asked to be is that lag; only an offset
-outside that span counts as a correction and stops the glide. A component that turns a
-notch into something else — the request list collapsing its header on the first notch — says so with
-`consumeWheel`, since `preventDefault` from a React handler is ignored.
+it owns its offset. It applies a step on its next frame and shows it once React commits, two frames
+behind on a light page, so an offset anywhere between where the glide started and where it has asked
+to be is that lag; only an offset outside that span counts as a correction and stops the glide.
+
+**A glide never adds lag to the reader's hand** (ADR 0047). Every glide moves on its first frame;
+a virtualized list gets its first step from inside the input event, so it starts on the frame its own
+jump would have; and a notch that arrives while the list is still catching up neither costs it a
+frame nor starts over from where the list has got to. A wheel that keeps turning moves the list on
+every frame until it lands.
+
+A component that turns a notch into something else — the request list collapsing its header on the
+first notch — says so with `consumeWheel`, since `preventDefault` from a React handler is ignored.
 
 The glide is on by default and is **not** switched off by `prefers-reduced-motion`: it is the
 reader's own input following their hand, as inertial scrolling stays on under Reduce Motion on
@@ -1580,6 +1587,33 @@ page's section nav) swipes within the strip with `overscroll-behavior-x: contain
 is bounded by its column. A sideways swipe that moves the whole page or the whole conversation is a
 defect, and the phone-list and narrow-workspace probes measure the content pane's own
 `scrollWidth`, not only the document's.
+
+### The request list is the page's one scroller, and it follows the finger
+
+On a phone, or wherever a finger is the main pointer, the request page is exactly the content pane
+and the list is the only thing on it that scrolls. A page around the list that could scroll took
+over every drag that started on the filters and every drag that reached the end of the list, then
+bounced at its own end, or reloaded the page when pulled down at the top. Over the list the browser
+keeps only sideways panning and zoom (`touch-action: pan-x pinch-zoom`).
+
+The list is virtualized, so the browser cannot scroll it for a finger, and the library's own touch
+emulation ran up to four times ahead of the finger: it restarted a fixed-interval coast after every
+move, and that coast kept firing while the finger was still down. The console moves the list itself
+(`web/src/components/usage/requestListTouch.ts`, ADR 0048):
+
+- **The list moves exactly as far as the finger**, drawn on the frame the finger moved.
+- **A flick coasts** at the speed the finger left with, slowing at iOS's normal rate, and a finger
+  that rested before lifting does not coast.
+- **A tap on a coasting list only stops it**, as on any native scroller; it does not open the row
+  under it. A tap elsewhere, on the pagination or the back-to-top pill, stops the coast and still
+  acts.
+- **The header folds and unfolds with the wheel's gestures.** The first drag up folds it away and
+  leaves row one in place, as the first notch does. A deliberate pull down past the top of the list
+  (48px) unfolds it, as the top bounce does; arriving at the top does not. Folding is what makes room
+  on a phone, where the unfolded filters take most of the screen; the pull is the only way back to
+  them that a finger has, since the back-to-top pill is not shown at the top. A page that is loading
+  or found nothing has no list to pull, so a drag there never folds the header, and a header folded
+  before the list went away unfolds on a 48px pull down anywhere on the page.
 
 ### The phone's navigation is the rail, in a sheet
 
