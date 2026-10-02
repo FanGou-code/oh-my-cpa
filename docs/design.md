@@ -1284,9 +1284,10 @@ outside `fast`. The exceptions are listed in the checker's `EXCEPTIONS` table wi
 one, and an exception that stops matching a rule is itself a failure — the list cannot rot into
 things that were once true. Two kinds exist. A `layout` exception waives rule 1 for a disclosure,
 where a reflow is the point and the alternative is an accordion that snaps open. A `duration`
-exception waives the token requirement for an indeterminate loop, whose period is how long one cycle
-takes rather than a transition between two states: the two background-refresh bars and the icon
-spinner. §7 handles those by freezing them under reduced motion rather than by shortening them.
+exception waives the token requirement for a loop whose period is how long one cycle takes rather
+than a transition between two states: the heatmap's re-read bar, the icon spinner, the Agent's
+running pip and the first-load placeholders' breath. §7 handles those by freezing them under reduced
+motion rather than by shortening them.
 `scripts/check-motion.test.mjs`
 exercises every rule in both directions on a fixture tree and asserts the repository itself is clean.
 Enforcing the reduced-motion rule immediately paid for itself: antd animates its floating panels in
@@ -1310,12 +1311,15 @@ Hard rules:
    repaint of a large subtree.
 2. **Keep the animated area tiny.** A 2px progress bar is acceptable; dimming or
    fading a whole grid is not — it forces the browser to composite the entire
-   page on every refresh.
+   page on every refresh. The one exception is a first-load placeholder frame,
+   which exists only while nothing has ever loaded and so never animates over
+   content (ADR 0052).
 3. **No gradient shimmer.** antd's `Skeleton active` and similar sweeping
-   gradients cost frames and clash with the flat aesthetic. Use static skeleton
-   blocks.
+   gradients cost frames and clash with the flat aesthetic. Placeholders are the
+   console's own flat blocks (`Placeholder.tsx`), and they *breathe*: an opacity
+   cycle, staggered one `base` per row, frozen under reduced motion (ADR 0052).
 4. **Suppress spinner flash.** A request that resolves quickly must never paint a
-   loading indicator at all (`DataProgress` waits 200ms before showing).
+   loading indicator at all (the loading bar waits 200ms before painting).
    Background auto-refresh must not paint a loading state at all; a reading that
    changed may still say so, which is rules 8 and 5 and nothing else.
 5. **A mark sweeps between revisions instead of hard-cutting.** An AntV mark morphs to its
@@ -1335,8 +1339,10 @@ Hard rules:
    a canvas mark is redrawn frame by frame instead of being composited, so rule 1 is *not*
    satisfied by these eight marks, and 240ms on surfaces this small is the whole of what the
    exception buys. See ADR 0008.
-6. **Feedback must be immediate.** Optimistic affordances (button `loading`,
-   the progress bar) appear on the interaction itself, not after a transition.
+6. **Acknowledge actions immediately.** Button `loading` and optimistic
+   affordances appear on the interaction itself, not after a transition. The
+   progress bar follows rule 4 instead: it waits 200ms to suppress fast-request
+   flashes.
 7. **A hover lands within the fast token.** A hover is the interface acknowledging the
    pointer, so it must land on the frame the pointer arrives — a transition longer than
    `fast` (50ms) is a drag, not an acknowledgement, and the rule was written after antd's
@@ -1369,13 +1375,59 @@ custom range changes, manual refresh and background refetch.
 | --- | --- |
 | Route change | Content sits in a keyed `.route-transition` that fades in over 100ms with a 3px rise, and the scroll position resets with the new page. |
 | Query key change (preset, range, filter) | `placeholderData: keepPreviousData` — the previous result stays on screen while the next one loads. |
-| Any request in flight | The app-wide 2px `.data-progress` bar, shown after a 200ms delay. Regions are never dimmed or unmounted. |
-| First load with no data yet | Render the real page frame with static `Skeleton` blocks, not a bare full-page spinner swap. |
+| Any request in flight | The app-wide 2px `.data-progress` bar, painted after a 200ms delay, whose length is the measured share of counted work done (below). Regions are never dimmed or unmounted. |
+| First load with no data yet | Render the real page frame with placeholders drawn at the content's geometry, not a bare full-page spinner swap. |
 | Error after data existed | Keep the stale data visible and surface a warning; only replace the page when nothing was ever loaded. |
 | Auto-refresh poll | The view does not move, though a reading and a mark may. The poll is not a view change, so it must not reset pagination, remount the list, expand a collapsed header, or relabel the data as "previous results". Two things may move: a dashboard KPI number rolling to its new value, and any dashboard chart mark morphing to its own new revision - the six KPI sparklines, and the model trend and usage ring, which re-read on their own endpoint rather than on the tiles' (rules 8 and 5). |
 
-`prefers-reduced-motion` removes the fade and freezes the progress bar, but the
+`prefers-reduced-motion` removes the fade, drops the bar's pending estimate (it
+steps only when a task settles) and freezes the placeholders' breath, but the
 no-blank rule still applies — fall back to a static loading state.
+
+### Loading feedback: a measured bar and placeholders where content lands
+
+See ADR 0052 for the decision and its trade-offs.
+
+**The bar measures counted work.** Every non-silent query and every module
+download behind a Suspense boundary is a task (`web/src/utils/loadProgress.ts`,
+`web/src/utils/progressTasks.ts`). A settled task counts in full; a pending task
+earns credit toward 85% of its share on an exponential curve, so the bar keeps
+moving while a slow read is outstanding and only a task settling finishes it. It
+never moves backwards. Done, it holds full for one `base` beat and fades over
+another. If reduced motion cancels that completion fade, the finished bar hides
+immediately. The fill is a `transform: scaleX()` over a track tinted 18% of the
+accent, so the reader sees how much is left. The element is a `progressbar` whose
+`aria-valuenow` rounds down in 10-percentage-point steps; only the fully drawn
+bar announces 100%. Changing reduced-motion preference while work is pending
+preserves that batch and its drawn progress.
+
+| Where | What it counts |
+| --- | --- |
+| Under the console header (`DataProgress`) | The page's queries, and route, editor and drawer module downloads |
+| Under the shell placeholder's header (`ShellLoading`) | The stored-preferences read and the shell's own download |
+| The sign-in page's top edge | The session check and the sign-in request |
+
+**Placeholders are drawn at the content's geometry.** The kit in
+`web/src/components/common/Placeholder.tsx` is the shared placeholder vocabulary;
+`web/src/components/common/ContentPlaceholder.tsx` composes page-only paragraph/table
+shapes behind the route import, keeping them out of the sign-in entry;
+antd `Skeleton` and page-level `Spin` are not used for a first load. Blocks fill
+with `--border`, use `--radius-sm`, and line heights match the glyph height of
+the copy they stand for (title 18px, body 10px, meta 8px).
+
+| Surface | Placeholder |
+| --- | --- |
+| Shell (`ShellLoading`) | The real wordmark, the rail at its 28px label / 36px item rhythm and group sizes, the header's crumbs and actions, and a page frame |
+| A lazy route (`RouteLoading`) | The page head (title, subtitle) and a framed list of six rows |
+| A list (`PageLoading variant="block"`) | Rows of mark, name, meta line and trailing state at the list's 64px row height |
+| The request list | Table rows at the list's 44px row height (`TablePlaceholder`) |
+| Dashboard | Each tile's label, readout and sparkline in the real tile grid |
+| Drawers, panels, editors | Paragraph lines (`ParagraphPlaceholder`) |
+| Custom icon library | The library's own artwork tiles |
+
+A placeholder region carries the localized `common.loading` status name; the
+blocks are `aria-hidden`. A Suspense fallback inside a page uses
+`SuspenseFallback` so its download is counted.
 
 ### Live tail: follow at the top, hold when reading
 
@@ -1829,6 +1881,19 @@ The Stop button uses the existing `--border` / `--surface` tokens and no shadow,
 
 The existing icon modal has Built-in and Custom segments. The built-in catalog keeps its category filters and lazy artwork loading. The library header pairs its title/count with Add icon; editor headers pair Back with the action title. The custom library has name search, full-width empty/search-empty states and artwork cards with separate selection, edit and delete targets. New/edit forms replace the grid within the same modal: a named file/Base64 source sits alongside a specimen preview at 64px and a provider-list preview at 24px, with a single save footer. File imports support a keyboard-accessible choose button and drag/drop; only server-validated artwork enables saving. The preview becomes a compact stacked panel on narrow screens, and the modal body scrolls within the viewport. Saving returns to the library without assigning the icon. Deletion opens a dedicated confirmation view with the artwork, reference count and default-reset impact; Cancel receives initial focus, and confirmed deletion removes the asset and restores every assignment to its default or placeholder. Returning from editing or deletion restores focus to Add icon. In-flight writes prevent dismissal and tab switching. The modal retains its explicit layer above the provider drawer. Existing palette, typography, spacing and motion tokens are unchanged.
 
+
+### Sign-in surface
+
+`web/src/components/common/AuthGate.tsx` follows the centred single column most operator consoles
+sign in with (Cloudflare, Vercel, Grafana). It is a 360px column on the page's own `--bg`: no card,
+no texture, and no rule under the 56px header, which holds only the theme and language menus at the
+right. The column holds the 28px wordmark, centred (the page's only drawing of the brand, decorative
+because the title also names the product), the 22px/700 title, centred, the labelled key field and
+a full-width primary button, both at antd's large size (40px). There is no eyebrow, subtitle or
+footnote. The field's label already says what to enter, and §3 rule 2 bars a line that restates it
+or instructs. A refused key stays inline as a `Notice` above the field. The session check draws the
+column's outline as placeholders at the form's own geometry. The session check and the sign-in
+request draw the measured bar along the page's top edge.
 
 ### Route error recovery surface
 

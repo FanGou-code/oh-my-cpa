@@ -160,7 +160,6 @@ const DICT: Record<string, [string, string]> = {
   'agent.status.uncertain': ["结果不确定，请检查资源状态", "Outcome uncertain; inspect the resource"],
   'agent.status.partial': ["部分完成", "Partially completed"],
   'agent.status.interrupted': ["已中断", "Interrupted"],
-  'agent.loading': ["正在加载", "Loading"],
   'agent.private_input': ["安全输入（不发送给模型）", "Private input (not sent to the model)"],
   'agent.oauth': ["在 OAuth 页面完成授权", "Complete authorization on the OAuth page"],
   'agent.approve': ["允许", "Allow"],
@@ -720,20 +719,11 @@ const DICT: Record<string, [string, string]> = {
   'auth.connect_failed': ['无法连接认证服务', 'Cannot reach the auth service'],
   'auth.success': ['登录成功', 'Signed in'],
   'auth.failed': ['登录失败', 'Sign in failed'],
-  'auth.eyebrow': ['访问控制', 'ACCESS CONTROL'],
   'auth.title': ['登录 Oh My CPA', 'Sign in to Oh My CPA'],
-  'auth.subtitle': [
-    '使用 CPA Management Key 继续',
-    'Continue with your CPA management key',
-  ],
   'auth.label': ['Management Key', 'Management key'],
   'auth.required': ['请输入 Management Key', 'Management key is required'],
   'auth.placeholder': ['management.secret-key', 'management.secret-key'],
   'auth.submit': ['登录', 'Sign in'],
-  'auth.footnote': [
-    'Key 仅在服务端校验，不会存储在浏览器中。',
-    'The key is verified server-side and never stored in the browser.',
-  ],
 
   // ── logs ─────────────────────────────────────────────────────────────────
   'logs.tab_tail': ['实时日志', 'Live tail'],
@@ -757,7 +747,6 @@ const DICT: Record<string, [string, string]> = {
   'logs.tail_empty': ['暂无新日志', 'No log lines yet'],
   'logs.show_more': ['再显示 {n} 行', 'Show {n} more lines'],
   'logs.jump_latest': ['回到最新', 'Back to newest'],
-  'logs.loading': ['加载中…', 'Loading…'],
   'logs.disabled_title': ['CPA 未开启文件日志', 'CPA is not writing a log file'],
   'logs.unsupported_title': ['当前 CPA 版本没有日志接口', 'This CPA build has no log endpoint'],
   'logs.offline_title': ['无法连接 CPA', 'CPA is unreachable'],
@@ -1437,7 +1426,6 @@ const DICT: Record<string, [string, string]> = {
   'cfg.source_editor_loading': ['正在初始化编辑器…', 'Initializing editor…'],
   'cfg.source_dirty': ['已修改 (未保存)', 'Modified (Unsaved)'],
   'cfg.source_clean': ['已同步', 'Synced'],
-  'cfg.source_loading': ['正在加载 YAML 配置文件…', 'Loading YAML configuration…'],
   'cfg.source_save_success': ['配置已成功保存并应用', 'Configuration saved and applied'],
   'cfg.dirty_bar_unsaved': ['有未保存的更改', 'Unsaved changes'],
   'cfg.dirty_bar_discard': ['放弃更改', 'Discard changes'],
@@ -1543,7 +1531,6 @@ const DICT: Record<string, [string, string]> = {
   // ── triage / resources ───────────────────────────────────────────────────
   'tri.error': ['无法从 Oh My CPA 服务获取资源列表', 'Failed to load the resource list from Oh My CPA'],
   'tri.retry_conn': ['重试连接', 'Retry connection'],
-  'tri.loading': ['正在扫描并加载 CPA 资源列表...', 'Scanning and loading CPA resources...'],
   'tri.empty_title': ['尚未发现任何 CPA 接入点', 'No CPA endpoints discovered yet'],
   'tri.empty_desc': [
     '请确保 CPA 实例已正常启动，并配置了正确的 OMCPA_CPA_BASE_URL 与 MANAGEMENT_KEY。',

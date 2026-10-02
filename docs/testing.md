@@ -213,8 +213,8 @@ copied report's fields. It is automatically discovered.
 The `route-render-error` and `route-lazy-error` probes intercept a real page module
 to cause a render exception or an import failure; the render probe also fails the
 shell to prove the fallback is independent of it. The lazy-import probe holds
-and rejects the shell download, checking its loading indicator and localized
-accessible status name, diagnostic copy and full-document recovery after the
+and rejects the shell download, checking its placeholder, localized accessible
+status name and the measured bar reporting the held download as unfinished, diagnostic copy and full-document recovery after the
 shell becomes available. They assert the
 root route's brand, localized title and diagnostic copy in all four languages, light/dark
 rendering, phone overflow and touch-sized controls, heading focus, stack
@@ -225,3 +225,26 @@ fault-injection route is introduced. These router, focus and document-lifetime
 claims require Chromium. Built-artifact theme/brand acceptance waits for the
 rendered shell content (and the desktop wordmark) as well as theme hydration
 before measuring geometry and SVG fills, because the shell download can complete after theme hydration.
+
+### Loading feedback regression coverage
+
+`scripts/test-load-progress.ts` owns the loading bar's policy (ADR 0052): batch
+opening and completion, full credit for a settled task, a pending task's capped
+credit, a late task's own start time, a restarted task counted twice, a fresh
+batch after completion, the 200ms show delay, frame-rate-independent smoothing
+that never moves backwards, and the task registry's single settle and source
+union. Announced percentage tests cover the 95–99% boundary and many settled
+tasks with one pending, reserving 100% for actual drawn completion. It injects
+the clock, so no test waits on real time. The `route-lazy-error` probe owns the
+browser wiring: the shell placeholder and its
+bar painting while the shell download is held, including a nearly full bar
+that must still announce incomplete work and a live reduced-motion switch that
+must preserve the batch and never reset its drawn progress. It also cancels a
+completed sign-in bar's actual opacity transition with reduced motion, pausing
+its animation clock at `transitionrun` to keep emulation deterministic, and checks
+that the root becomes hidden, independently of query-cache notifications. Placeholder geometry and the
+sign-in surface are covered by the existing route and probe scenarios that load
+those pages, which wait on the rendered content rather than on a spinner.
+
+The motion checker self-test pins the placeholder duration exception without
+waiving the reduced-motion counterpart or durations on unrelated selectors.
