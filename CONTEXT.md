@@ -358,6 +358,29 @@ and the places it deliberately differs from the hand-tuned values it replaced.
   reports no usage, or, when every window reports usage below 100 because
   upstream rounds, the most used one. Pinning every window would show the weekly
   quota as spent whenever the 5-hour window runs out.
+- **Estimated Window Capacity**: What a whole Quota Window is worth: usage this
+  deployment recorded in the indicated cycle and metered model scope divided by
+  the share upstream reports as used. It is capacity at 100%, not a forecast of
+  consumption when the window ends. Usage stops at the observation, and cost uses
+  Request Cost Snapshots. Below 5% consumption no current-cycle estimate is given;
+  dollar estimates additionally require at least 95% of recorded requests to be
+  priced. Unknown boundaries, expired or failed readings, unresolved model scopes,
+  unavailable evidence and observed mid-cycle resets also withhold estimates.
+  The rounding allowance covers half a percentage point, not statistical confidence.
+  Codex and Claude global windows, model-metered windows and reviewed Antigravity
+  groups can be estimated. An opaque historical alias without an identifiable served
+  model makes a scoped estimate unavailable; it is never treated as zero usage.
+  Unrecorded traffic is invisible, late-arriving recorded events can revise an
+  estimate, and the figure varies with model mix. It never feeds routing or status.
+- **Previous-Cycle Capacity Reference**: The last retained valid capacity estimate
+  from the immediately preceding scheduled cycle, offered when a fresh current
+  cycle has too little usage, no recorded traffic or no used-share reading. It is
+  explicitly labelled as historical and carries its observation and cycle bounds;
+  it is neither current capacity nor the previous cycle's actual total consumption.
+  A changed scope or period, a missing adjacent cycle or an observed early reset
+  makes the reference unavailable. Detected reset evidence and failed history-read
+  evidence remain attached to subsequent observations of that cycle even after the original readings expire.
+  An evidence failure withholds estimates but does not block saving a fresh reading.
 - **Preference**: Console state stored server-side rather than in the browser,
   so it follows the deployment across devices, browsers, incognito windows, and
   cleared browser storage rather than binding to a single client instance.
