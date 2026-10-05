@@ -16,7 +16,7 @@ records why that trade was taken and what it costs.
 | --- | --- | --- |
 | Console | Cloudflare Static Assets, from `tmp/cloudflare-demo/assets` | The built SPA, with the demonstration's runtime configuration injected and its asset URLs made root-relative |
 | API | `deploy/cloudflare/worker.mjs` | Reads the dataset, re-bases its timestamps and answers; refuses everything that would leave the demonstration |
-| Data | `deploy/cloudflare/data/responses.json` | 109 captured responses, generated from the real handlers |
+| Data | `deploy/cloudflare/data/responses.json` | 110 captured responses, generated from the real handlers |
 | Routing | `deploy/cloudflare/routes.mjs` | Which request is answered by which captured response |
 | Time | `deploy/cloudflare/time.mjs` | Moves the captured history onto the viewer's clock |
 | Filters | `deploy/cloudflare/filters.mjs` | Applies the audit trail's category, outcome, search and folding rules, and the service log's `after` position, to the one captured page, so those filters work in the demonstration |
@@ -37,7 +37,11 @@ pnpm check:demo             # coverage, freshness and privacy
 the demo fixture, drives every read the console makes, and writes what comes back. The
 value of generating rather than authoring is that every response has been through the
 same DTO projection a self-hosted install produces, so the demonstration cannot show a
-shape the product never emits. The captured Agent session is the same console DTO: it
+shape the product never emits. The Model Square response captures CPA-advertised IDs, safe routing provenance and
+bundled models.dev reference facts. Its Worker route maps to the generated `model-square`
+dataset entry; `scripts/demo-inputs.mjs` includes the metadata snapshot so updates invalidate
+the capture. External model lookup links are explicit navigation, not Worker forwarding.
+The captured Agent session is the same console DTO: it
 excludes private model history, queued model calls and raw database-query results.
 
 The export is reproducible: two runs over unchanged code are byte-identical, on any

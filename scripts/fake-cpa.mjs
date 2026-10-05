@@ -13,6 +13,18 @@ function isV0Endpoint(path) {
 }
 
 // The settings a v8 credential group may carry for all of its keys.
+/**
+ * Whether an exclusion list hides an upstream model, by CPA's rule: case-insensitive, with `*`
+ * matching any run of characters. Without it the gateway would advertise models a provider has
+ * switched off, and a directory read against this fixture would accept them as available.
+ */
+function isModelExcluded(model, patterns) {
+  return (patterns ?? []).some((pattern) => {
+    const expression = String(pattern).trim().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
+    return new RegExp(`^${expression}$`, 'i').test(model);
+  });
+}
+
 const GROUP_SHARED_FIELDS = new Set(['base-url', 'priority', 'prefix', 'proxy-url', 'headers', 'models', 'excluded-models', 'disable-cooling', 'request-retry', 'request-scoped-errors']);
 
 // groupEntries renders a flat credential list the way CPA renders a converted
@@ -308,6 +320,42 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     requests.push({ method: request.method, path: url.pathname, query: url.search, body: Buffer.concat(chunks).toString('utf8') });
+
+    // Gateway reads use the live client-key list, not the management credential.
+    // Project only model identities; provider configuration contains secrets.
+    if (url.pathname === '/v1/models') {
+      const clientKeys = configDoc.access?.['api-keys'] ?? [];
+      if (!clientKeys.some((key) => typeof key === 'string' && key.trim() && request.headers.authorization === `Bearer ${key}`)) {
+        json(response, 401, { error: 'unauthorized' });
+        return;
+      }
+      if (request.method !== 'GET') {
+        json(response, 405, { error: 'method not allowed' }, { Allow: 'GET' });
+        return;
+      }
+      const modelIds = new Set();
+      for (const credential of authFiles) {
+        if (credential.disabled || credential.unavailable) continue;
+        for (const model of credential.models ?? []) {
+          if (isModelExcluded(model.id, credential.excluded_models)) continue;
+          const aliases = (oauthModelAliases[credential.provider] ?? []).filter((alias) => alias.name === model.id);
+          if (aliases.length === 0 || aliases.some((alias) => alias.fork)) modelIds.add(model.id);
+          for (const alias of aliases) modelIds.add(alias.alias);
+        }
+      }
+      for (const list of Object.values(providerLists)) {
+        for (const provider of list.get()) {
+          if (provider.disabled) continue;
+          for (const model of provider.models ?? []) {
+            if (isModelExcluded(model.name, provider['excluded-models'])) continue;
+            const identity = model.alias || model.name;
+            modelIds.add(provider.prefix ? `${provider.prefix}/${identity}` : identity);
+          }
+        }
+      }
+      json(response, 200, { object: 'list', data: [...modelIds].filter(Boolean).sort().map((id) => ({ id, object: 'model', owned_by: 'fixture' })) });
+      return;
+    }
 
     // A plugin's own page and its assets: CPA serves these without the management key,
     // and the page reaches its plugin through absolute paths from CPA's root.
