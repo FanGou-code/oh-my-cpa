@@ -143,6 +143,15 @@ and hidden-tab suspension are logic tests, while the Agent probe checks visible 
 light Stop border. Stream-coalescing probes exclude only elapsed-label mutations, not answer
 mutations, because the clock does not publish through the transcript's run hook.
 
+### Dashboard model-view regressions
+
+The existing `dashboard-model-panels-states` probe owns window selection, manual refresh,
+model grouping persistence, optimistic selection and rejected-write rollback. Grouping assertions
+read the native radios' checked state, not antd's animation-owned selected CSS class: a moving
+thumb temporarily removes that class without changing the selected value. The refusal fixture
+holds only the model-view PUT until the optimistic radio is observed, then explicitly releases
+its 500 response and waits for rollback. It does not depend on animation completion or a fixed delay.
+
 ### Plugin row regressions
 
 The existing `plugin-management` probe owns the installed row's matching action geometry,

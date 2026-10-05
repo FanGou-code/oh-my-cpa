@@ -2287,6 +2287,14 @@ After the fixes, the suite passes eight consecutive trials under the strictest
 configuration available here (2 CPUs, with the probes running concurrently), which
 is the configuration the baseline failed.
 
+Segmented preferences have a separate animation-state boundary. The dashboard
+model-view probe read antd's selected CSS class as the grouping value, but the
+component suppresses that class while its thumb moves, independently of the native
+radio's checked state. A rapid reversal can leave the probe waiting on animation
+completion instead of testing the preference. The probe reads checked radios and
+holds the rejected model-view write until the optimistic selection is observed,
+then releases the refusal and asserts rollback.
+
 ### 12.4 CI preparation and fail-early artifact gates
 
 An earlier profile of the `browser` job's preparation step was about 99s, bound by

@@ -1,5 +1,4 @@
 import { until } from '../harness.mjs';
-import { sleep } from '../probe.mjs';
 
 /**
  * Probes for the dashboard's model panels: the token trend and the usage ring,
@@ -881,7 +880,12 @@ export async function dashboardModelPanelStates({ base, page, check, context }) 
   // would present upstream-model rows as call points. The request URL is the observable, and so is
   // the persisted write: the choice has to survive a reload like every other console preference.
   const beforeToggle = calls.length;
-  await page.locator('.model-usage-card .ant-segmented-item').filter({ hasText: /By upstream model|按上游模型/ }).first().click();
+  const modelOption = page.locator('.model-usage-card .ant-segmented-item').filter({ hasText: /By upstream model|按上游模型/ }).first();
+  const callPointOption = page.locator('.model-usage-card .ant-segmented-item').filter({ hasText: /By call point|按调用点/ }).first();
+  // The thumb owns the selected CSS class during motion; the radio owns the actual value.
+  const modelRadio = modelOption.getByRole('radio');
+  const callPointRadio = callPointOption.getByRole('radio');
+  await modelOption.click();
   let modelViewRead = false;
   await until(async () => {
     modelViewRead = calls.slice(beforeToggle).some((search) => !search.includes('group_by=call'));
@@ -901,55 +905,53 @@ export async function dashboardModelPanelStates({ base, page, check, context }) 
   // from moments ago, so the switch repaints from cache rather than issuing another window scan.
   // The claims that matter are therefore the control's own state and the persisted write - a
   // reader who reloads must land back in the call view.
-  await page.locator('.model-usage-card .ant-segmented-item').filter({ hasText: /By call point|按调用点/ }).first().click();
+  await callPointOption.click();
   let callViewPersisted = false;
   await until(async () => {
     callViewPersisted = preferenceWrites.some((entry) => entry.key === 'omc_models_view' && entry.value === 'call');
     return callViewPersisted;
   }, { label: 'the call-point view to be persisted' }).catch(() => {});
+  await until(() => callPointRadio.isChecked(), { label: 'the call-point radio to be selected' });
   check(
     'switching back selects the call-point view and persists it',
-    (
-      (await page.locator('.model-usage-card .ant-segmented-item-selected').innerText()).trim().length > 0
-      && /By call point|按调用点/.test(await page.locator('.model-usage-card .ant-segmented-item-selected').innerText())
-      && callViewPersisted
-    ),
-    `selected=${JSON.stringify(await page.locator('.model-usage-card .ant-segmented-item-selected').innerText())} writes=${JSON.stringify(preferenceWrites)}`,
+    await callPointRadio.isChecked() && !await modelRadio.isChecked() && callViewPersisted,
+    `writes=${JSON.stringify(preferenceWrites)}`,
   );
 
-  // ── a refused preference write puts the control back ──────────────────────
-  // The view toggle is optimistic: the panel switches on the click, then the write settles. When the
-  // write is refused the control must return to the value the server still holds - otherwise the
-  // console keeps showing a setting that was never saved, because these preferences never refetch on
-  // their own. This is the failure mode a toast alone cannot fix.
-  //
-  // The refusal is *delayed* on purpose. An immediate 500 rolls the control back inside the click
-  // handler, so the optimistic paint would either be missed by the poll or, worse, the whole check
-  // would pass on a control that never moved at all. Holding the write open makes the intermediate
-  // state a real, observable one - and then the rollback after the refusal is a change from it.
-  await context.route('**/omc/api/**/preferences/*', async (route) => {
+  // Hold only this preference write until the optimistic selection has been observed. A timer
+  // could refuse it before a busy runner sees the intermediate state, or outlive a fast render.
+  const preferenceRoute = '**/omc/api/**/preferences/omc_models_view';
+  let releasePreferenceWrite;
+  const preferenceWriteGate = new Promise((resolve) => { releasePreferenceWrite = resolve; });
+  let hasPreferenceWriteStarted = false;
+  const refusePreferenceWrite = async (route) => {
     if (route.request().method() !== 'PUT') return route.fallback();
-    await sleep(600);
+    hasPreferenceWriteStarted = true;
+    await preferenceWriteGate;
     return route.fulfill({ status: 500, json: { error: 'preference write refused' } });
-  });
-  await page.locator('.model-usage-card .ant-segmented-item').filter({ hasText: /By upstream model|按上游模型/ }).first().click();
-  let optimisticShown = false;
-  await until(async () => {
-    optimisticShown = /By upstream model|按上游模型/.test(await page.locator('.model-usage-card .ant-segmented-item-selected').innerText());
-    return optimisticShown;
-  }, { label: 'the optimistic switch to appear while the write is still in flight' }).catch(() => {});
-  check('a write still in flight shows the operator\'s choice immediately', optimisticShown);
-  let rolledBack = false;
-  await until(async () => {
-    rolledBack = /By call point|按调用点/.test(await page.locator('.model-usage-card .ant-segmented-item-selected').innerText());
-    return rolledBack;
-  }, { label: 'the control to fall back to the persisted view after the refusal' }).catch(() => {});
-  check(
-    'a refused preference write falls the control back to the persisted view',
-    rolledBack,
-    `selected=${JSON.stringify(await page.locator('.model-usage-card .ant-segmented-item-selected').innerText())}`,
-  );
-  await context.unroute('**/omc/api/**/preferences/*');
+  };
+  // Page routes precede context routes, so the held response owns the request before the shared mock.
+  await page.route(preferenceRoute, refusePreferenceWrite);
+  try {
+    const refusedResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith('/preferences/omc_models_view')
+      && response.request().method() === 'PUT' && response.status() === 500);
+    try {
+      await modelOption.click();
+      await until(() => hasPreferenceWriteStarted, { label: 'the model-view write to reach the held route' });
+      await until(() => modelRadio.isChecked(), { label: 'the optimistic model-view radio while its write is held' });
+      check('a write still in flight shows the operator\'s choice immediately',
+        await modelRadio.isChecked() && !await callPointRadio.isChecked());
+    } finally {
+      releasePreferenceWrite();
+    }
+    await refusedResponse;
+    await until(() => callPointRadio.isChecked(), { label: 'the control to fall back to the persisted view after the refusal' });
+    check('a refused preference write falls the control back to the persisted view',
+      await callPointRadio.isChecked() && !await modelRadio.isChecked());
+  } finally {
+    await page.unroute(preferenceRoute, refusePreferenceWrite);
+  }
 
   // ── a stale refresh keeps the panels and says so ───────────────────────────
   await page.unroute('**/omc/api/**');

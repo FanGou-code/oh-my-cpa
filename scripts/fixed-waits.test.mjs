@@ -45,7 +45,6 @@ const BASELINE = {
   // Two deadline guards and the polling cadence of the condition helpers themselves.
   'scripts/acceptance/probe.mjs': 6,
   'scripts/acceptance/probes/dashboardCharts.mjs': 5,
-  'scripts/acceptance/probes/dashboardModelPanels.mjs': 1,
   'scripts/acceptance/probes/dashboardTokenHeatmap.mjs': 8,
   'scripts/acceptance/probes/oauthManagement.mjs': 8,
   'scripts/acceptance/probes/omcSettings.mjs': 1,
