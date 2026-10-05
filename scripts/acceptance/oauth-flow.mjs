@@ -110,7 +110,9 @@ export async function runOAuthFlowAcceptance({
   // Plugin-discovered OAuth: a CPA plugin advertising supports_oauth joins the
   // same picker with its declared provider id and plugin-published logo.
   await openConnect(page);
-  await selectProvider(page, 'iflow', 'iFlow Alliance Auth OAuth');
+  // The picker lists a plugin provider under the name its own metadata declares,
+  // so the locator must match that exact string.
+  await selectProvider(page, 'iflow', 'iFlow Alliance Auth');
   const pluginLogo = await page.locator(`[data-oauth-card="iflow"] img`).first().getAttribute('src');
   check('connect picker draws the plugin-published logo', pluginLogo === FAKE_PLUGIN_LOGO_DATA_URL, `src=${pluginLogo ?? 'none'}`);
   check(
@@ -122,7 +124,7 @@ export async function runOAuthFlowAcceptance({
   await pluginPanel.getByText(/等待|waiting/i).first().waitFor({ state: 'visible', timeout: 15000 });
   await minimizeConnect(page);
   await openConnect(page);
-  await selectProvider(page, 'iflow', 'iFlow Alliance Auth OAuth');
+  await selectProvider(page, 'iflow', 'iFlow Alliance Auth');
   const resumedPluginText = await page.locator('[data-oauth-card="iflow"]').innerText();
   check(
     'reopening a minimized plugin session preserves its waiting attempt without restart or cancel',
