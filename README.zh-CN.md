@@ -15,7 +15,7 @@ MCP · 可视化 · 管理
 [![Release](https://img.shields.io/github/v/release/WizisCool/oh-my-cpa?label=release)](https://github.com/WizisCool/oh-my-cpa/releases)
 [![CI](https://github.com/WizisCool/oh-my-cpa/actions/workflows/ci.yml/badge.svg)](https://github.com/WizisCool/oh-my-cpa/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/WizisCool/oh-my-cpa?style=flat&label=stars)](https://github.com/WizisCool/oh-my-cpa/stargazers)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
+[![Docker Pulls](https://img.shields.io/docker/pulls/wiziscool/oh-my-cpa?style=flat&logo=docker&logoColor=white)](https://hub.docker.com/r/wiziscool/oh-my-cpa)
 [![CLIProxyAPI](https://img.shields.io/badge/CLIProxyAPI-v8+-4f46e5?style=flat)](https://github.com/router-for-me/CLIProxyAPI)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
@@ -23,7 +23,8 @@ MCP · 可视化 · 管理
 
 **[在线演示](https://omc-demo.junze.dev)** ·
 [安装](#安装) ·
-[Agent 安装](#通过编码-agent-安装) ·
+[功能特性](#功能特性) ·
+[智能体与 MCP](#智能体与-mcp) ·
 [文档](#文档) ·
 [English](README.md)
 
@@ -38,6 +39,8 @@ MCP · 可视化 · 管理
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）是一个 API 网关，负责协议适配、凭据管理与请求代理。
 **Oh My CPA**（OMC）是配套的 Web 控制台：管理网关的提供商、凭据与配置，并记录每条请求的用量与费用（CPA 本身不保存这些记录）。
 OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本地 SQLite，可离线运行，登录使用 CPA 的管理密钥。
+
+官方 CPA 管理中心各项功能在 OMC 中的对应状态见 [`docs/cpamc-parity.md`](docs/cpamc-parity.md)。
 
 <table>
 <tr>
@@ -71,12 +74,6 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 </td>
 </tr>
 </table>
-
-## 在线演示
-
-> [!TIP]
-> **[体验 Oh My CPA →](https://omc-demo.junze.dev)**
-> 用示例数据体验控制台。
 
 ## 界面截图
 
@@ -129,13 +126,12 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 
 | 安装场景 | 方案 |
 | --- | --- |
-| 尚未部署 CPA | [全新安装](#全新安装) |
-| CPA 由 Docker Compose 部署 | [加入现有编排文件](#加入现有编排文件) |
-| CPA 以其他方式部署 | [独立部署](#独立部署) |
+| 尚未部署 CPA | 全新安装 |
+| CPA 由 Docker Compose 部署 | 加入现有编排文件 |
+| CPA 以其他方式部署 | 独立部署 |
 
-### 全新安装
-
-同时部署 CPA 与 OMC。
+<details>
+<summary><b>全新安装</b>：CPA 与 OMC 写在同一个编排文件</summary>
 
 1. 新建一个目录，将以下内容保存为 `compose.yml`：
 
@@ -199,9 +195,10 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 5. 访问 **`http://127.0.0.1:8080/omc/`**，以 `.env` 中 `CPA_MANAGEMENT_KEY` 的值登录。
    提供商与客户端密钥在控制台中添加。客户端请求发往 CPA：`http://127.0.0.1:8317`。
 
-### 加入现有编排文件
+</details>
 
-将 OMC 作为一个服务，加入已在运行 CPA 的编排文件。
+<details>
+<summary><b>加入现有编排文件</b>：OMC 作为 CPA 旁的一个服务</summary>
 
 1. 在 `services:` 下添加以下服务。文件已有顶层 `volumes:` 时，只在其下追加
    `oh-my-cpa-data:`，不要重复该键。
@@ -248,7 +245,10 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 
 5. 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
 
-### 独立部署
+</details>
+
+<details>
+<summary><b>独立部署</b>：OMC 使用单独的编排文件</summary>
 
 OMC 使用单独的编排文件运行，适用于 CPA 运行在宿主机、其他 Docker 项目或另一台机器上的情况。
 
@@ -300,6 +300,8 @@ OMC 使用单独的编排文件运行，适用于 CPA 运行在宿主机、其�
 
 5. 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
 
+</details>
+
 ### 安装后
 
 - **验证。** OMC 连上 CPA 后，`curl -fsS http://127.0.0.1:8080/omc/api/healthz`
@@ -325,33 +327,6 @@ OMC 使用单独的编排文件运行，适用于 CPA 运行在宿主机、其�
 按照这份指南帮我安装 Oh My CPA：
 https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
 ```
-
-## 智能体与 MCP
-
-**控制台内。** 在 `/agent` 页面，由 CPA 路由的模型回答问题并操作控制台：
-用量与请求分析、提供商、OAuth、配额、客户端密钥、配置与定价。读操作直接执行；
-变更先在服务端生成，在控制台点击「允许」后才执行。密钥、令牌与 OAuth 授权不会进入模型上下文。
-
-**外部 Agent。** 同一套能力也通过二进制自带的 MCP 服务提供：
-
-```json
-{
-  "mcpServers": {
-    "oh-my-cpa": {
-      "command": "/path/to/oh-my-cpa",
-      "args": ["mcp"],
-      "env": {
-        "OMCPA_SERVER_URL": "https://cpa.example.com/omc",
-        "OMCPA_CPA_MANAGEMENT_KEY": "<CPA 管理密钥>"
-      }
-    }
-  }
-}
-```
-
-外部 Agent 可以读取状态、发起操作，但不能批准操作、提交密钥或完成 OAuth 登录。
-管理密钥等同于管理员权限，只应接入可信的 Agent。
-能力清单与权限规则见 [`docs/agent-capabilities.md`](docs/agent-capabilities.md)。
 
 ## 功能特性
 
@@ -400,21 +375,32 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 
 </details>
 
-## 架构
+## 智能体与 MCP
 
-```text
-浏览器 ──▶ 直接访问 / 已有 HTTPS 入口 ──▶ Oh My CPA (:8080)
-                                           ├─ 内嵌 React SPA (/omc/)
-                                           ├─ SQLite WAL (/data)
-                                           └─ 用量采集器 ──▶ CLIProxyAPI (:8317)
+**控制台内。** 在 `/agent` 页面，由 CPA 路由的模型回答问题并操作控制台：
+用量与请求分析、提供商、OAuth、配额、客户端密钥、配置与定价。读操作直接执行；
+变更先在服务端生成，在控制台点击「允许」后才执行。密钥、令牌与 OAuth 授权不会进入模型上下文。
+
+**外部 Agent。** 同一套能力也通过二进制自带的 MCP 服务提供：
+
+```json
+{
+  "mcpServers": {
+    "oh-my-cpa": {
+      "command": "/path/to/oh-my-cpa",
+      "args": ["mcp"],
+      "env": {
+        "OMCPA_SERVER_URL": "https://cpa.example.com/omc",
+        "OMCPA_CPA_MANAGEMENT_KEY": "<CPA 管理密钥>"
+      }
+    }
+  }
+}
 ```
 
-- **单二进制**：React 控制台内嵌在 Go 可执行文件中。
-- **单副本**：SQLite WAL 模式，每个数据目录只允许一个进程。
-- **原生支持子路径**：默认挂载在 `/omc`（`OMCPA_BASE_PATH`），可与 CPA 共用同一个主机名。
-- **接口白名单**：控制台只转发明确列出的接口与字段，不透传 CPA 的原始响应，也不代理任意 URL。
-
-模块划分、数据流与架构约束见 [`docs/architecture.md`](docs/architecture.md)。
+外部 Agent 可以读取状态、发起操作，但不能批准操作、提交密钥或完成 OAuth 登录。
+管理密钥等同于管理员权限，只应接入可信的 Agent。
+能力清单与权限规则见 [`docs/agent-capabilities.md`](docs/agent-capabilities.md)。
 
 ## 配置
 
@@ -431,25 +417,52 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 
 完整的配置参考、部署约束与运维须知见 [`docs/operations.md`](docs/operations.md)。
 
+## 架构
+
+```text
+浏览器 ──▶ 直接访问 / 已有 HTTPS 入口 ──▶ Oh My CPA (:8080)
+                                           ├─ 内嵌 React SPA (/omc/)
+                                           ├─ SQLite WAL (/data)
+                                           └─ 用量采集器 ──▶ CLIProxyAPI (:8317)
+```
+
+- **单二进制**：React 控制台内嵌在 Go 可执行文件中。
+- **单副本**：SQLite WAL 模式，每个数据目录只允许一个进程。
+- **原生支持子路径**：默认挂载在 `/omc`（`OMCPA_BASE_PATH`），可与 CPA 共用同一个主机名。
+- **接口白名单**：控制台只转发明确列出的接口与字段，不透传 CPA 的原始响应，也不代理任意 URL。
+
+模块划分、数据流与架构约束见 [`docs/architecture.md`](docs/architecture.md)。
+
 ## 文档
 
 除本页外，技术文档均以英文撰写。
 
-| | |
+**使用**
+
+| 文档 | 内容 |
 | --- | --- |
 | [`docs/install.md`](docs/install.md) | 安装、验证、升级与排障 |
 | [`docs/install-for-agents.md`](docs/install-for-agents.md) | 写给编码 Agent 执行的安装指南 |
-| [`docs/releasing.md`](docs/releasing.md) | Docker Hub 镜像与 GitHub 标签发布流程 |
 | [`docs/operations.md`](docs/operations.md) | 配置参考与运维须知 |
 | [`docs/ops/sqlite-operations.md`](docs/ops/sqlite-operations.md) | 备份、恢复与主密钥管理手册 |
 | [`docs/agent-capabilities.md`](docs/agent-capabilities.md) | 智能体能力清单、权限规则与 MCP 接入 |
-| [`docs/architecture.md`](docs/architecture.md) | 模块边界、数据流与架构约束 |
 | [`docs/cpa-v8-compat.md`](docs/cpa-v8-compat.md) | CPA v8 基线与配置字段迁移对照 |
 | [`docs/cpamc-parity.md`](docs/cpamc-parity.md) | 与官方 CPA 管理中心的功能对照 |
+
+**开发**
+
+| 文档 | 内容 |
+| --- | --- |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发环境与验证流程 |
+| [`AGENTS.md`](AGENTS.md) | 编码 Agent 在本仓库中遵循的约定 |
+| [`docs/architecture.md`](docs/architecture.md) | 模块边界、数据流与架构约束 |
 | [`CONTEXT.md`](CONTEXT.md) · [`docs/design.md`](docs/design.md) | 领域术语 · 视觉系统 |
+| [`docs/releasing.md`](docs/releasing.md) | Docker Hub 镜像与 GitHub 标签发布流程 |
 | [`docs/ops/cloudflare-demo.md`](docs/ops/cloudflare-demo.md) | 在线演示的部署方式 |
 
-## 开发
+## 参与贡献
+
+欢迎提交 Issue 与 Pull Request。开发环境需要 Go 1.25+、Node.js 22+ 与 pnpm 11+：
 
 ```bash
 pnpm install --frozen-lockfile
@@ -457,21 +470,11 @@ cp .env.example .env
 pnpm dev          # Air + Vite 热重载，地址 http://127.0.0.1:5173/omc/
 ```
 
-| 命令 | 用途 |
-| --- | --- |
-| `pnpm test:fast` | 只运行工作区改动影响到的检查 |
-| `pnpm check:ui` | 只运行改动能触及的浏览器场景 |
-| `pnpm verify` | 推送前运行的静态门禁 |
-| `pnpm verify:full` | 在本地运行 CI 的全部内容 |
-| `pnpm readme:screenshots` | 用演示模式重新生成本页截图 |
+推送前运行 `pnpm verify` 与 `pnpm check:ui`。环境搭建与验证流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
-环境搭建与验证流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；
-[`AGENTS.md`](AGENTS.md) 是编码 Agent 在本仓库中遵循的约定。
+## 安全
 
-## 贡献与安全
-
-欢迎提交 Issue 与 Pull Request，请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
-安全漏洞请按 [`SECURITY.md`](SECURITY.md) 的说明私下报告，不要公开提 Issue。
+安全漏洞按 [`SECURITY.md`](SECURITY.md) 的说明私下报告，不要公开提 Issue。
 
 ## 致谢
 

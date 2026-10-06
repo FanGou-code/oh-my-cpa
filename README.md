@@ -15,7 +15,7 @@ MCP · Visualization · Management
 [![Release](https://img.shields.io/github/v/release/WizisCool/oh-my-cpa?label=release)](https://github.com/WizisCool/oh-my-cpa/releases)
 [![CI](https://github.com/WizisCool/oh-my-cpa/actions/workflows/ci.yml/badge.svg)](https://github.com/WizisCool/oh-my-cpa/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/WizisCool/oh-my-cpa?style=flat&label=stars)](https://github.com/WizisCool/oh-my-cpa/stargazers)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
+[![Docker Pulls](https://img.shields.io/docker/pulls/wiziscool/oh-my-cpa?style=flat&logo=docker&logoColor=white)](https://hub.docker.com/r/wiziscool/oh-my-cpa)
 [![CLIProxyAPI](https://img.shields.io/badge/CLIProxyAPI-v8+-4f46e5?style=flat)](https://github.com/router-for-me/CLIProxyAPI)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
@@ -23,7 +23,8 @@ MCP · Visualization · Management
 
 **[Live Demo](https://omc-demo.junze.dev)** ·
 [Install](#install) ·
-[For Agents](#install-with-a-coding-agent) ·
+[Features](#features) ·
+[Agents and MCP](#agents-and-mcp) ·
 [Documentation](#documentation) ·
 [简体中文](README.zh-CN.md)
 
@@ -41,6 +42,9 @@ console for it. OMC manages the gateway's providers, credentials and configurati
 records the usage and cost of every request, which CPA does not store. It is a single Go
 binary with the React console embedded and a local SQLite database, runs offline, and
 signs in with CPA's management key.
+
+[`docs/cpamc-parity.md`](docs/cpamc-parity.md) maps each feature of the official CPA
+management center to its status in OMC.
 
 <table>
 <tr>
@@ -78,12 +82,6 @@ Changes run only after approval.
 </td>
 </tr>
 </table>
-
-## Live demo
-
-> [!TIP]
-> **[Try Oh My CPA →](https://omc-demo.junze.dev)**
-> Explore the console with sample data.
 
 ## Screenshots
 
@@ -138,13 +136,12 @@ password is CPA's management key.
 
 | Scenario | Method |
 | --- | --- |
-| CPA is not deployed yet | [New install](#new-install) |
-| CPA is deployed with Docker Compose | [Add to the existing Compose file](#add-to-the-existing-compose-file) |
-| CPA is deployed another way | [Standalone](#standalone) |
+| CPA is not deployed yet | New install |
+| CPA is deployed with Docker Compose | Add to the existing Compose file |
+| CPA is deployed another way | Standalone |
 
-### New install
-
-Deploys CPA and OMC together.
+<details>
+<summary><b>New install</b>: CPA and OMC in one Compose file</summary>
 
 1. Create a directory and save the following as `compose.yml`:
 
@@ -209,9 +206,10 @@ Deploys CPA and OMC together.
    from `.env`. Providers and client keys are added in the console. Clients send requests
    to CPA at `http://127.0.0.1:8317`.
 
-### Add to the existing Compose file
+</details>
 
-Runs OMC as one more service in the Compose file that already runs CPA.
+<details>
+<summary><b>Add to the existing Compose file</b>: OMC as a service beside CPA</summary>
 
 1. Add the service under `services:`. If the file already has a top-level `volumes:`
    key, add `oh-my-cpa-data:` under it instead of repeating the key.
@@ -259,7 +257,10 @@ Runs OMC as one more service in the Compose file that already runs CPA.
 
 5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
 
-### Standalone
+</details>
+
+<details>
+<summary><b>Standalone</b>: OMC in its own Compose file</summary>
 
 Runs OMC from its own Compose file next to a CPA that runs on the host, in another
 Docker project or on another machine.
@@ -314,6 +315,8 @@ Docker project or on another machine.
 
 5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
 
+</details>
+
 ### After installing
 
 - **Verify.** `curl -fsS http://127.0.0.1:8080/omc/api/healthz` returns `"status":"ok"`
@@ -344,37 +347,6 @@ inspects the machine and follows the matching scenario:
 Install Oh My CPA for me by following
 https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
 ```
-
-## Agents and MCP
-
-**In the console.** On the `/agent` page, a model routed through CPA answers questions
-and operates the console: usage and request analysis, providers, OAuth, quota, client
-keys, configuration and pricing. Reads run directly. Changes are prepared server-side
-and run only after an Allow in the console. Secrets, tokens and OAuth authorization
-never enter the model's context.
-
-**From an external agent.** The same capabilities are available over MCP from the binary
-itself:
-
-```json
-{
-  "mcpServers": {
-    "oh-my-cpa": {
-      "command": "/path/to/oh-my-cpa",
-      "args": ["mcp"],
-      "env": {
-        "OMCPA_SERVER_URL": "https://cpa.example.com/omc",
-        "OMCPA_CPA_MANAGEMENT_KEY": "<CPA management key>"
-      }
-    }
-  }
-}
-```
-
-An external agent can read state and prepare an operation, but cannot approve it, submit
-a secret or complete an OAuth sign-in. The management key is administrator-equivalent,
-so connect only agents trusted with full access to the console.
-[`docs/agent-capabilities.md`](docs/agent-capabilities.md) is the contract.
 
 ## Features
 
@@ -423,21 +395,36 @@ so connect only agents trusted with full access to the console.
 
 </details>
 
-## Architecture
+## Agents and MCP
 
-```text
-Browser ──▶ Direct listener / existing HTTPS ingress ──▶ Oh My CPA (:8080)
-                                                 ├─ Embedded React SPA (/omc/)
-                                                 ├─ SQLite WAL (/data)
-                                                 └─ Usage collector ──▶ CLIProxyAPI (:8317)
+**In the console.** On the `/agent` page, a model routed through CPA answers questions
+and operates the console: usage and request analysis, providers, OAuth, quota, client
+keys, configuration and pricing. Reads run directly. Changes are prepared server-side
+and run only after an Allow in the console. Secrets, tokens and OAuth authorization
+never enter the model's context.
+
+**From an external agent.** The same capabilities are available over MCP from the binary
+itself:
+
+```json
+{
+  "mcpServers": {
+    "oh-my-cpa": {
+      "command": "/path/to/oh-my-cpa",
+      "args": ["mcp"],
+      "env": {
+        "OMCPA_SERVER_URL": "https://cpa.example.com/omc",
+        "OMCPA_CPA_MANAGEMENT_KEY": "<CPA management key>"
+      }
+    }
+  }
+}
 ```
 
-- **Single binary**: the React console is embedded in the Go executable.
-- **Single replica**: SQLite in WAL mode, one process per data directory.
-- **Sub-path native**: served under `/omc` by default (`OMCPA_BASE_PATH`), so it shares a host with CPA.
-- **Allowlisted facade**: the console never proxies raw CPA responses or arbitrary URLs.
-
-[`docs/architecture.md`](docs/architecture.md) has the module map, data flows and invariants.
+An external agent can read state and prepare an operation, but cannot approve it, submit
+a secret or complete an OAuth sign-in. The management key is administrator-equivalent,
+so connect only agents trusted with full access to the console.
+[`docs/agent-capabilities.md`](docs/agent-capabilities.md) is the contract.
 
 ## Configuration
 
@@ -455,23 +442,51 @@ Browser ──▶ Direct listener / existing HTTPS ingress ──▶ Oh My CPA (
 The full reference, with deployment constraints and operational notes, is
 [`docs/operations.md`](docs/operations.md).
 
+## Architecture
+
+```text
+Browser ──▶ Direct listener / existing HTTPS ingress ──▶ Oh My CPA (:8080)
+                                                 ├─ Embedded React SPA (/omc/)
+                                                 ├─ SQLite WAL (/data)
+                                                 └─ Usage collector ──▶ CLIProxyAPI (:8317)
+```
+
+- **Single binary**: the React console is embedded in the Go executable.
+- **Single replica**: SQLite in WAL mode, one process per data directory.
+- **Sub-path native**: served under `/omc` by default (`OMCPA_BASE_PATH`), so it shares a host with CPA.
+- **Allowlisted facade**: the console never proxies raw CPA responses or arbitrary URLs.
+
+[`docs/architecture.md`](docs/architecture.md) has the module map, data flows and invariants.
+
 ## Documentation
 
-| | |
+**Using OMC**
+
+| Document | Contents |
 | --- | --- |
 | [`docs/install.md`](docs/install.md) | Installation, verification, upgrades, troubleshooting |
 | [`docs/install-for-agents.md`](docs/install-for-agents.md) | The same install, as steps for a coding agent |
-| [`docs/releasing.md`](docs/releasing.md) | Tag-triggered Docker Hub and GitHub releases |
 | [`docs/operations.md`](docs/operations.md) | Settings reference and operational notes |
 | [`docs/ops/sqlite-operations.md`](docs/ops/sqlite-operations.md) | Backup, restore and master-key runbook |
 | [`docs/agent-capabilities.md`](docs/agent-capabilities.md) | Agent capability contract and the MCP bridge |
-| [`docs/architecture.md`](docs/architecture.md) | Module boundaries, data flows and invariants |
 | [`docs/cpa-v8-compat.md`](docs/cpa-v8-compat.md) | CPA v8 baseline and configuration relocation |
 | [`docs/cpamc-parity.md`](docs/cpamc-parity.md) | Feature parity with the official CPA management center |
+
+**Developing OMC**
+
+| Document | Contents |
+| --- | --- |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development setup and the verification workflow |
+| [`AGENTS.md`](AGENTS.md) | The contract coding agents follow in this repository |
+| [`docs/architecture.md`](docs/architecture.md) | Module boundaries, data flows and invariants |
 | [`CONTEXT.md`](CONTEXT.md) · [`docs/design.md`](docs/design.md) | Domain vocabulary · visual system |
+| [`docs/releasing.md`](docs/releasing.md) | Tag-triggered Docker Hub and GitHub releases |
 | [`docs/ops/cloudflare-demo.md`](docs/ops/cloudflare-demo.md) | How the public demo is deployed |
 
-## Development
+## Contributing
+
+Issues and pull requests are welcome. Development needs Go 1.25+, Node.js 22+ and
+pnpm 11+:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -479,20 +494,11 @@ cp .env.example .env
 pnpm dev          # Air + Vite with hot reload at http://127.0.0.1:5173/omc/
 ```
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm test:fast` | The checks affected by working-tree changes |
-| `pnpm check:ui` | The browser scenarios a change can reach |
-| `pnpm verify` | The static gate to run before pushing |
-| `pnpm verify:full` | Everything CI runs, locally |
-| `pnpm readme:screenshots` | Regenerate the screenshots on this page from demo mode |
+Run `pnpm verify` and `pnpm check:ui` before pushing.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup and the verification workflow.
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup and the verification workflow;
-[`AGENTS.md`](AGENTS.md) is the contract coding agents follow in this repository.
+## Security
 
-## Contributing & security
-
-Issues and pull requests are welcome; start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
 Report vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md), not in a
 public issue.
 
