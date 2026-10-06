@@ -119,6 +119,17 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 
 ## 安装
 
+### 通过 Agent 安装
+
+将以下内容交给 Claude Code、Codex、Cursor 或其他 Agent。Agent 会检查机器现状，选择合适的安装方式并执行：
+
+```text
+按照这份指南帮我安装 Oh My CPA：
+https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
+```
+
+### 通过 Docker Compose 安装
+
 环境要求：Docker Engine（含 Compose 插件），CLIProxyAPI v8.0.0 及以上。
 命令按 Linux 或 macOS 终端编写，需要 `curl` 与 `openssl`。控制台的登录密码是 CPA 的管理密钥。
 
@@ -128,7 +139,7 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 | CPA 由 Docker Compose 部署 | [加入现有编排文件](#加入现有编排文件) |
 | CPA 以其他方式部署 | [独立部署](#独立部署) |
 
-### 全新安装
+#### 全新安装
 
 新建一个目录，将以下内容保存为 `compose.yml`：
 
@@ -178,7 +189,7 @@ docker compose up -d
 访问 **`http://127.0.0.1:8080/omc/`**，以 `.env` 中 `CPA_MANAGEMENT_KEY` 的值登录。
 提供商与客户端密钥在控制台中添加；客户端请求发往 CPA：`http://127.0.0.1:8317`。
 
-### 加入现有编排文件
+#### 加入现有编排文件
 
 在运行 CPA 的编排文件的 `services:` 下添加以下服务；文件已有顶层 `volumes:` 时，
 将 `oh-my-cpa-data:` 并入其中。`cli-proxy-api` 是 CPA 官方编排文件中的服务名，服务名不同时替换为实际名称。
@@ -211,7 +222,7 @@ OMCPA_MASTER_KEY=<openssl rand -hex 32 的输出>
 执行 `docker compose up -d oh-my-cpa`，CPA 容器保持原样运行，不会重启。
 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
 
-### 独立部署
+#### 独立部署
 
 新建一个目录，将以下内容保存为 `compose.yml`。`OMCPA_CPA_BASE_URL` 是从容器内部访问 CPA 的地址：
 下面的值适用于 CPA 在同一台机器上并监听所有网卡的情况，其他情况见[连接 CPA](docs/install.md#reaching-cpa)。
@@ -255,15 +266,6 @@ CPA 的每条用量记录只交给一个读取方。同一个 CPA 上已有其�
 或在 `environment:` 下添加 `OMCPA_USAGE_INGEST_MODE: "off"`，仅将 OMC 用于管理。其他管理面板不冲突。
 
 发布版的加固编排文件、远程访问、HTTPS、源码构建、升级与排障见[安装指南](docs/install.md)（英文）。
-
-### 通过编码 Agent 安装
-
-将以下内容交给 Claude Code、Codex、Cursor 或其他编码 Agent。Agent 会检查机器现状，并按对应的安装场景执行：
-
-```text
-按照这份指南帮我安装 Oh My CPA：
-https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
-```
 
 ## 功能特性
 

@@ -127,6 +127,18 @@ each with three built-in palettes and one custom palette.
 
 ## Install
 
+### Install with an agent
+
+Paste the following into Claude Code, Codex, Cursor or another coding agent. The agent
+inspects the machine, picks the matching method and installs it:
+
+```text
+Install Oh My CPA for me by following
+https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
+```
+
+### Install with Docker Compose
+
 Requires Docker Engine with the Compose plugin and CLIProxyAPI v8.0.0 or later. The
 commands assume a Linux or macOS shell with `curl` and `openssl`. The console's sign-in
 password is CPA's management key.
@@ -137,7 +149,7 @@ password is CPA's management key.
 | CPA is deployed with Docker Compose | [Add to the existing Compose file](#add-to-the-existing-compose-file) |
 | CPA is deployed another way | [Standalone](#standalone) |
 
-### New install
+#### New install
 
 Save the following as `compose.yml` in a new directory:
 
@@ -189,7 +201,7 @@ Open **`http://127.0.0.1:8080/omc/`** and sign in with the `CPA_MANAGEMENT_KEY` 
 from `.env`. Providers and client keys are added in the console; clients send requests
 to CPA at `http://127.0.0.1:8317`.
 
-### Add to the existing Compose file
+#### Add to the existing Compose file
 
 Add the service under `services:` in the Compose file that runs CPA, and merge
 `oh-my-cpa-data:` into the top-level `volumes:` key if one exists. `cli-proxy-api` is
@@ -224,7 +236,7 @@ OMCPA_MASTER_KEY=<output of: openssl rand -hex 32>
 Run `docker compose up -d oh-my-cpa`, which leaves the CPA container running as it is.
 Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
 
-### Standalone
+#### Standalone
 
 Save the following as `compose.yml` in a new directory. `OMCPA_CPA_BASE_URL` is CPA's
 address as seen from inside the container: the value below reaches a CPA on the same
@@ -275,16 +287,6 @@ for management only. Other management panels do not conflict.
 The [installation guide](docs/install.md) covers the hardened Compose files published
 with each release, remote access, HTTPS, building from source, upgrades and
 troubleshooting.
-
-### Install with a coding agent
-
-Paste the following into Claude Code, Codex, Cursor or another coding agent. The agent
-inspects the machine and follows the matching scenario:
-
-```text
-Install Oh My CPA for me by following
-https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
-```
 
 ## Features
 
