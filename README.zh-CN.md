@@ -124,198 +124,137 @@ OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本�
 
 | 安装场景 | 方案 |
 | --- | --- |
-| 尚未部署 CPA | 全新安装 |
-| CPA 由 Docker Compose 部署 | 加入现有编排文件 |
-| CPA 以其他方式部署 | 独立部署 |
+| 尚未部署 CPA | [全新安装](#全新安装) |
+| CPA 由 Docker Compose 部署 | [加入现有编排文件](#加入现有编排文件) |
+| CPA 以其他方式部署 | [独立部署](#独立部署) |
 
-<details>
-<summary><b>全新安装</b>：CPA 与 OMC 写在同一个编排文件</summary>
+### 全新安装
 
-1. 新建一个目录，将以下内容保存为 `compose.yml`：
+新建一个目录，将以下内容保存为 `compose.yml`：
 
-   ```yaml
-   services:
-     cli-proxy-api:
-       image: eceasy/cli-proxy-api:latest
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:8317:8317"
-       environment:
-         MANAGEMENT_PASSWORD: ${CPA_MANAGEMENT_KEY:?}
-       volumes:
-         - ./config.yaml:/CLIProxyAPI/config.yaml
-         - ./auths:/root/.cli-proxy-api
-         - ./logs:/CLIProxyAPI/logs
-         - ./plugins:/CLIProxyAPI/plugins
+```yaml
+services:
+  cli-proxy-api:
+    image: eceasy/cli-proxy-api:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8317:8317"
+    environment:
+      MANAGEMENT_PASSWORD: ${CPA_MANAGEMENT_KEY:?}
+    volumes:
+      - ./config.yaml:/CLIProxyAPI/config.yaml
+      - ./auths:/root/.cli-proxy-api
+      - ./logs:/CLIProxyAPI/logs
+      - ./plugins:/CLIProxyAPI/plugins
 
-     oh-my-cpa:
-       image: wiziscool/oh-my-cpa:latest
-       restart: unless-stopped
-       depends_on:
-         - cli-proxy-api
-       ports:
-         - "127.0.0.1:8080:8080"
-       environment:
-         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
-         OMCPA_CPA_MANAGEMENT_KEY: ${CPA_MANAGEMENT_KEY:?}
-         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-         OMCPA_DATA_DIR: /data
-       volumes:
-         - oh-my-cpa-data:/data
+  oh-my-cpa:
+    image: wiziscool/oh-my-cpa:latest
+    restart: unless-stopped
+    depends_on:
+      - cli-proxy-api
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+      OMCPA_CPA_MANAGEMENT_KEY: ${CPA_MANAGEMENT_KEY:?}
+      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+      OMCPA_DATA_DIR: /data
+    volumes:
+      - oh-my-cpa-data:/data
 
-   volumes:
-     oh-my-cpa-data:
-   ```
+volumes:
+  oh-my-cpa-data:
+```
 
-2. 在同一目录下载 CPA 的初始配置：
+在该目录下载 CPA 的初始配置，生成两个密钥，并启动两个服务：
 
-   ```bash
-   curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
-   ```
+```bash
+curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
+printf 'CPA_MANAGEMENT_KEY=%s\nOMCPA_MASTER_KEY=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+docker compose up -d
+```
 
-3. 生成两个密钥。`CPA_MANAGEMENT_KEY` 是 CPA 的管理密钥，也是控制台的登录密码；
-   `OMCPA_MASTER_KEY` 用于加密 OMC 的数据库。
+访问 **`http://127.0.0.1:8080/omc/`**，以 `.env` 中 `CPA_MANAGEMENT_KEY` 的值登录。
+提供商与客户端密钥在控制台中添加；客户端请求发往 CPA：`http://127.0.0.1:8317`。
 
-   ```bash
-   cat > .env <<EOF
-   CPA_MANAGEMENT_KEY=$(openssl rand -hex 24)
-   OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-   EOF
-   chmod 600 .env
-   ```
+### 加入现有编排文件
 
-4. 启动两个服务：
+在运行 CPA 的编排文件的 `services:` 下添加以下服务；文件已有顶层 `volumes:` 时，
+将 `oh-my-cpa-data:` 并入其中。`cli-proxy-api` 是 CPA 官方编排文件中的服务名，服务名不同时替换为实际名称。
 
-   ```bash
-   docker compose up -d
-   ```
+```yaml
+  oh-my-cpa:
+    image: wiziscool/oh-my-cpa:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+      OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+      OMCPA_DATA_DIR: /data
+    volumes:
+      - oh-my-cpa-data:/data
 
-5. 访问 **`http://127.0.0.1:8080/omc/`**，以 `.env` 中 `CPA_MANAGEMENT_KEY` 的值登录。
-   提供商与客户端密钥在控制台中添加。客户端请求发往 CPA：`http://127.0.0.1:8317`。
+volumes:
+  oh-my-cpa-data:
+```
 
-</details>
+在同一目录的 `.env` 中添加两行：
 
-<details>
-<summary><b>加入现有编排文件</b>：OMC 作为 CPA 旁的一个服务</summary>
+```dotenv
+OMCPA_CPA_MANAGEMENT_KEY=<CPA 管理密钥的明文，而非 config.yaml 中的哈希>
+OMCPA_MASTER_KEY=<openssl rand -hex 32 的输出>
+```
 
-1. 在 `services:` 下添加以下服务。文件已有顶层 `volumes:` 时，只在其下追加
-   `oh-my-cpa-data:`，不要重复该键。
+执行 `docker compose up -d oh-my-cpa`，CPA 容器保持原样运行，不会重启。
+访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
 
-   ```yaml
-     oh-my-cpa:
-       image: wiziscool/oh-my-cpa:latest
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:8080:8080"
-       environment:
-         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
-         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
-         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-         OMCPA_DATA_DIR: /data
-       volumes:
-         - oh-my-cpa-data:/data
+### 独立部署
 
-   volumes:
-     oh-my-cpa-data:
-   ```
+新建一个目录，将以下内容保存为 `compose.yml`。`OMCPA_CPA_BASE_URL` 是从容器内部访问 CPA 的地址：
+下面的值适用于 CPA 在同一台机器上并监听所有网卡的情况，其他情况见[连接 CPA](docs/install.md#reaching-cpa)。
 
-   `cli-proxy-api` 是 CPA 官方编排文件中的服务名。服务名不同时，
-   在 `OMCPA_CPA_BASE_URL` 中改用实际名称。
+```yaml
+services:
+  oh-my-cpa:
+    image: wiziscool/oh-my-cpa:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      OMCPA_CPA_BASE_URL: http://host.docker.internal:8317
+      OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+      OMCPA_DATA_DIR: /data
+    volumes:
+      - oh-my-cpa-data:/data
 
-2. 在编排文件所在目录生成主密钥：
+volumes:
+  oh-my-cpa-data:
+```
 
-   ```bash
-   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
-   chmod 600 .env
-   ```
+在同一目录创建 `.env`：
 
-3. 将 CPA 的管理密钥写入 `.env`。填写明文，而非 CPA `config.yaml` 中保存的哈希。
+```dotenv
+OMCPA_CPA_MANAGEMENT_KEY=<CPA 管理密钥的明文，而非 config.yaml 中的哈希>
+OMCPA_MASTER_KEY=<openssl rand -hex 32 的输出>
+```
 
-   ```dotenv
-   OMCPA_CPA_MANAGEMENT_KEY=<管理密钥>
-   ```
+执行 `docker compose up -d`，然后访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
 
-4. 启动 OMC。命令中指定服务名，CPA 容器保持原样运行，不会重启。
+### 注意事项
 
-   ```bash
-   docker compose up -d oh-my-cpa
-   ```
+> [!IMPORTANT]
+> 备份 `.env`。`OMCPA_MASTER_KEY` 是数据库的加密密钥，丢失后数据无法读取。
 
-5. 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
+CPA 的每条用量记录只交给一个读取方。同一个 CPA 上已有其他用量统计工具时，停用该工具，
+或在 `environment:` 下添加 `OMCPA_USAGE_INGEST_MODE: "off"`，仅将 OMC 用于管理。其他管理面板不冲突。
 
-</details>
-
-<details>
-<summary><b>独立部署</b>：OMC 使用单独的编排文件</summary>
-
-OMC 使用单独的编排文件运行，适用于 CPA 运行在宿主机、其他 Docker 项目或另一台机器上的情况。
-
-1. 新建一个目录，将以下内容保存为 `compose.yml`：
-
-   ```yaml
-   services:
-     oh-my-cpa:
-       image: wiziscool/oh-my-cpa:latest
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:8080:8080"
-       extra_hosts:
-         - host.docker.internal:host-gateway
-       environment:
-         OMCPA_CPA_BASE_URL: http://host.docker.internal:8317
-         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
-         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-         OMCPA_DATA_DIR: /data
-       volumes:
-         - oh-my-cpa-data:/data
-
-   volumes:
-     oh-my-cpa-data:
-   ```
-
-   `OMCPA_CPA_BASE_URL` 是从容器内部访问 CPA 的地址。
-   `http://host.docker.internal:8317` 适用于 CPA 在同一台机器上并监听所有网卡的情况，
-   其他情况见[连接 CPA](docs/install.md#reaching-cpa)。
-
-2. 生成主密钥：
-
-   ```bash
-   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
-   chmod 600 .env
-   ```
-
-3. 将 CPA 的管理密钥写入 `.env`。填写明文，而非 CPA `config.yaml` 中保存的哈希。
-
-   ```dotenv
-   OMCPA_CPA_MANAGEMENT_KEY=<管理密钥>
-   ```
-
-4. 启动 OMC：
-
-   ```bash
-   docker compose up -d
-   ```
-
-5. 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
-
-</details>
-
-### 安装后
-
-- **验证。** OMC 连上 CPA 后，`curl -fsS http://127.0.0.1:8080/omc/api/healthz`
-  返回 `"status":"ok"` 与 `"cpa_connected":true`。状态为 `"degraded"` 表示 CPA 地址或管理密钥有误，
-  或 CPA 未允许远程管理。
-- **备份 `.env`。** `OMCPA_MASTER_KEY` 是数据库的加密密钥，丢失后数据无法读取。
-- **每个 CPA 只能有一个用量采集方。** CPA 的每条用量记录只交给一个读取方。
-  同一个 CPA 上已有其他用量统计工具时，停用该工具，或在 `environment:` 下添加
-  `OMCPA_USAGE_INGEST_MODE: "off"`，仅将 OMC 用于管理。其他管理面板不冲突。
-
-> [!NOTE]
-> 以上编排文件是可运行的最小配置。每个版本另外发布 `compose.full.yml` 与 `compose.omc.yml`，
-> 增加只读根文件系统、能力裁剪、按健康状态排序的启动，以及完全由 `.env` 驱动的配置项，
-> 见[发布版编排文件](docs/install.md#release-compose-files)。
-
-远程访问、HTTPS、源码构建、升级与排障见[安装指南](docs/install.md)（英文）。
+发布版的加固编排文件、远程访问、HTTPS、源码构建、升级与排障见[安装指南](docs/install.md)（英文）。
 
 ### 通过编码 Agent 安装
 

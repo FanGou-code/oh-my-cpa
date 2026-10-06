@@ -133,207 +133,148 @@ password is CPA's management key.
 
 | Scenario | Method |
 | --- | --- |
-| CPA is not deployed yet | New install |
-| CPA is deployed with Docker Compose | Add to the existing Compose file |
-| CPA is deployed another way | Standalone |
+| CPA is not deployed yet | [New install](#new-install) |
+| CPA is deployed with Docker Compose | [Add to the existing Compose file](#add-to-the-existing-compose-file) |
+| CPA is deployed another way | [Standalone](#standalone) |
 
-<details>
-<summary><b>New install</b>: CPA and OMC in one Compose file</summary>
+### New install
 
-1. Create a directory and save the following as `compose.yml`:
+Save the following as `compose.yml` in a new directory:
 
-   ```yaml
-   services:
-     cli-proxy-api:
-       image: eceasy/cli-proxy-api:latest
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:8317:8317"
-       environment:
-         MANAGEMENT_PASSWORD: ${CPA_MANAGEMENT_KEY:?}
-       volumes:
-         - ./config.yaml:/CLIProxyAPI/config.yaml
-         - ./auths:/root/.cli-proxy-api
-         - ./logs:/CLIProxyAPI/logs
-         - ./plugins:/CLIProxyAPI/plugins
+```yaml
+services:
+  cli-proxy-api:
+    image: eceasy/cli-proxy-api:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8317:8317"
+    environment:
+      MANAGEMENT_PASSWORD: ${CPA_MANAGEMENT_KEY:?}
+    volumes:
+      - ./config.yaml:/CLIProxyAPI/config.yaml
+      - ./auths:/root/.cli-proxy-api
+      - ./logs:/CLIProxyAPI/logs
+      - ./plugins:/CLIProxyAPI/plugins
 
-     oh-my-cpa:
-       image: wiziscool/oh-my-cpa:latest
-       restart: unless-stopped
-       depends_on:
-         - cli-proxy-api
-       ports:
-         - "127.0.0.1:8080:8080"
-       environment:
-         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
-         OMCPA_CPA_MANAGEMENT_KEY: ${CPA_MANAGEMENT_KEY:?}
-         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-         OMCPA_DATA_DIR: /data
-       volumes:
-         - oh-my-cpa-data:/data
+  oh-my-cpa:
+    image: wiziscool/oh-my-cpa:latest
+    restart: unless-stopped
+    depends_on:
+      - cli-proxy-api
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+      OMCPA_CPA_MANAGEMENT_KEY: ${CPA_MANAGEMENT_KEY:?}
+      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+      OMCPA_DATA_DIR: /data
+    volumes:
+      - oh-my-cpa-data:/data
 
-   volumes:
-     oh-my-cpa-data:
-   ```
+volumes:
+  oh-my-cpa-data:
+```
 
-2. In the same directory, download the starter configuration for CPA:
+In that directory, download CPA's starter configuration, generate the two keys and start
+both services:
 
-   ```bash
-   curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
-   ```
+```bash
+curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
+printf 'CPA_MANAGEMENT_KEY=%s\nOMCPA_MASTER_KEY=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+docker compose up -d
+```
 
-3. Generate the two keys. `CPA_MANAGEMENT_KEY` is CPA's management key and the console's
-   sign-in password; `OMCPA_MASTER_KEY` encrypts OMC's database.
+Open **`http://127.0.0.1:8080/omc/`** and sign in with the `CPA_MANAGEMENT_KEY` value
+from `.env`. Providers and client keys are added in the console; clients send requests
+to CPA at `http://127.0.0.1:8317`.
 
-   ```bash
-   cat > .env <<EOF
-   CPA_MANAGEMENT_KEY=$(openssl rand -hex 24)
-   OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-   EOF
-   chmod 600 .env
-   ```
+### Add to the existing Compose file
 
-4. Start both services:
+Add the service under `services:` in the Compose file that runs CPA, and merge
+`oh-my-cpa-data:` into the top-level `volumes:` key if one exists. `cli-proxy-api` is
+the service name in CPA's own Compose file; replace it if the service is named
+differently.
 
-   ```bash
-   docker compose up -d
-   ```
+```yaml
+  oh-my-cpa:
+    image: wiziscool/oh-my-cpa:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+      OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+      OMCPA_DATA_DIR: /data
+    volumes:
+      - oh-my-cpa-data:/data
 
-5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the `CPA_MANAGEMENT_KEY` value
-   from `.env`. Providers and client keys are added in the console. Clients send requests
-   to CPA at `http://127.0.0.1:8317`.
+volumes:
+  oh-my-cpa-data:
+```
 
-</details>
+Add two lines to `.env` in the same directory:
 
-<details>
-<summary><b>Add to the existing Compose file</b>: OMC as a service beside CPA</summary>
+```dotenv
+OMCPA_CPA_MANAGEMENT_KEY=<CPA's management key in plaintext, not the hash in config.yaml>
+OMCPA_MASTER_KEY=<output of: openssl rand -hex 32>
+```
 
-1. Add the service under `services:`. If the file already has a top-level `volumes:`
-   key, add `oh-my-cpa-data:` under it instead of repeating the key.
+Run `docker compose up -d oh-my-cpa`, which leaves the CPA container running as it is.
+Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
 
-   ```yaml
-     oh-my-cpa:
-       image: wiziscool/oh-my-cpa:latest
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:8080:8080"
-       environment:
-         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
-         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
-         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-         OMCPA_DATA_DIR: /data
-       volumes:
-         - oh-my-cpa-data:/data
+### Standalone
 
-   volumes:
-     oh-my-cpa-data:
-   ```
+Save the following as `compose.yml` in a new directory. `OMCPA_CPA_BASE_URL` is CPA's
+address as seen from inside the container: the value below reaches a CPA on the same
+machine that listens on all interfaces, and [reaching CPA](docs/install.md#reaching-cpa)
+lists the other cases.
 
-   `cli-proxy-api` is the service name in CPA's own Compose file. If the service has
-   another name, use it in `OMCPA_CPA_BASE_URL`.
+```yaml
+services:
+  oh-my-cpa:
+    image: wiziscool/oh-my-cpa:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      OMCPA_CPA_BASE_URL: http://host.docker.internal:8317
+      OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+      OMCPA_DATA_DIR: /data
+    volumes:
+      - oh-my-cpa-data:/data
 
-2. In the directory that holds the Compose file, generate the master key:
+volumes:
+  oh-my-cpa-data:
+```
 
-   ```bash
-   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
-   chmod 600 .env
-   ```
+Create `.env` in the same directory:
 
-3. Add CPA's management key to `.env`. It is the plaintext key, not the hash stored in
-   CPA's `config.yaml`.
+```dotenv
+OMCPA_CPA_MANAGEMENT_KEY=<CPA's management key in plaintext, not the hash in config.yaml>
+OMCPA_MASTER_KEY=<output of: openssl rand -hex 32>
+```
 
-   ```dotenv
-   OMCPA_CPA_MANAGEMENT_KEY=<management key>
-   ```
+Run `docker compose up -d`, then open **`http://127.0.0.1:8080/omc/`** and sign in with
+the management key.
 
-4. Start OMC. Naming the service leaves the CPA container running as it is.
+### Notes
 
-   ```bash
-   docker compose up -d oh-my-cpa
-   ```
+> [!IMPORTANT]
+> Back up `.env`. `OMCPA_MASTER_KEY` encrypts the database, and the data cannot be read
+> without it.
 
-5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
+CPA hands each usage record to a single reader. If another usage tracker reads the same
+CPA, stop it, or add `OMCPA_USAGE_INGEST_MODE: "off"` under `environment:` to use OMC
+for management only. Other management panels do not conflict.
 
-</details>
-
-<details>
-<summary><b>Standalone</b>: OMC in its own Compose file</summary>
-
-Runs OMC from its own Compose file next to a CPA that runs on the host, in another
-Docker project or on another machine.
-
-1. Create a directory and save the following as `compose.yml`:
-
-   ```yaml
-   services:
-     oh-my-cpa:
-       image: wiziscool/oh-my-cpa:latest
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:8080:8080"
-       extra_hosts:
-         - host.docker.internal:host-gateway
-       environment:
-         OMCPA_CPA_BASE_URL: http://host.docker.internal:8317
-         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
-         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-         OMCPA_DATA_DIR: /data
-       volumes:
-         - oh-my-cpa-data:/data
-
-   volumes:
-     oh-my-cpa-data:
-   ```
-
-   `OMCPA_CPA_BASE_URL` is CPA's address as seen from inside the container.
-   `http://host.docker.internal:8317` reaches a CPA on the same machine that listens on
-   all interfaces. Other layouts are listed under
-   [reaching CPA](docs/install.md#reaching-cpa).
-
-2. Generate the master key:
-
-   ```bash
-   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
-   chmod 600 .env
-   ```
-
-3. Add CPA's management key to `.env`. It is the plaintext key, not the hash stored in
-   CPA's `config.yaml`.
-
-   ```dotenv
-   OMCPA_CPA_MANAGEMENT_KEY=<management key>
-   ```
-
-4. Start OMC:
-
-   ```bash
-   docker compose up -d
-   ```
-
-5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
-
-</details>
-
-### After installing
-
-- **Verify.** `curl -fsS http://127.0.0.1:8080/omc/api/healthz` returns `"status":"ok"`
-  and `"cpa_connected":true` once OMC has reached CPA. A `"degraded"` status means the
-  CPA address or management key is wrong, or CPA refuses remote management.
-- **Back up `.env`.** `OMCPA_MASTER_KEY` encrypts the database, and the data cannot be
-  read without it.
-- **One usage collector per CPA.** CPA hands each usage record to a single reader. If
-  another usage tracker reads the same CPA, stop it, or add
-  `OMCPA_USAGE_INGEST_MODE: "off"` under `environment:` to use OMC for management only.
-  Other management panels do not conflict.
-
-> [!NOTE]
-> The Compose files above are the minimum that runs. Each release also publishes
-> `compose.full.yml` and `compose.omc.yml`, which add a read-only root filesystem,
-> dropped capabilities, health-gated startup and settings driven entirely by `.env`. See
-> [release Compose files](docs/install.md#release-compose-files).
-
-Remote access, HTTPS, building from source, upgrades and troubleshooting are in the
-[installation guide](docs/install.md).
+The [installation guide](docs/install.md) covers the hardened Compose files published
+with each release, remote access, HTTPS, building from source, upgrades and
+troubleshooting.
 
 ### Install with a coding agent
 
