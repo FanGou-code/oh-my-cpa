@@ -43,9 +43,6 @@ records the usage and cost of every request, which CPA does not store. It is a s
 binary with the React console embedded and a local SQLite database, runs offline, and
 signs in with CPA's management key.
 
-[`docs/cpamc-parity.md`](docs/cpamc-parity.md) maps each feature of the official CPA
-management center to its status in OMC.
-
 <table>
 <tr>
 <td width="25%" valign="top">

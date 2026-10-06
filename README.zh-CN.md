@@ -40,8 +40,6 @@ MCP · 可视化 · 管理
 **Oh My CPA**（OMC）是配套的 Web 控制台：管理网关的提供商、凭据与配置，并记录每条请求的用量与费用（CPA 本身不保存这些记录）。
 OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本地 SQLite，可离线运行，登录使用 CPA 的管理密钥。
 
-官方 CPA 管理中心各项功能在 OMC 中的对应状态见 [`docs/cpamc-parity.md`](docs/cpamc-parity.md)。
-
 <table>
 <tr>
 <td width="25%" valign="top">
