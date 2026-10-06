@@ -1,18 +1,18 @@
 # Install Oh My CPA (for a coding agent)
 
-You are installing Oh My CPA (OMC) for the person you are working with. OMC is a web
-console for CLIProxyAPI (CPA). It needs **CPA v8.0.0 or later** and CPA's plaintext
+This runbook is for a coding agent installing Oh My CPA (OMC) on a user's machine. OMC
+is a web console for CLIProxyAPI (CPA). It needs **CPA v8.0.0 or later** and CPA's plaintext
 management key, which is also OMC's sign-in password. The Docker image is
 `wiziscool/oh-my-cpa:latest` (amd64 and arm64), so a normal install builds nothing.
 
-The work is: look at what is already there, pick one of three paths, install, verify.
+The work is: look at what is already there, pick a path, install, verify.
 
 ## Rules
 
 1. **Keep secrets out of the conversation.** Do not print `.env` files, management
-   keys, the master key or `docker compose config` output. When you need the existing
-   management key, write a placeholder into the `.env` file and ask the user to fill it
-   in themselves.
+   keys, the master key or `docker compose config` output. When the existing
+   management key is needed, write a placeholder into the `.env` file and ask the user
+   to fill it in.
 2. **Do not change the existing CPA.** No upgrade, no config edit, no restart, no
    stopping another panel or tracker, unless the user agrees to that specific change.
 3. **Never replace an existing `OMCPA_MASTER_KEY`.** If an OMC data directory already
@@ -38,7 +38,7 @@ Find out:
   exporter? CPA gives each usage record to one reader only, so this decides step 3.
 - Are ports 8080 and 8317 free?
 
-Ask the user only for what you cannot find out.
+Ask the user only for what cannot be found out.
 
 ## 2. Pick a path
 
@@ -50,9 +50,13 @@ Ask the user only for what you cannot find out.
 | CPA on the host listening on `127.0.0.1` only, or no Docker | **C**: build OMC from source and run it on the host |
 | OMC already installed | Step 5 |
 
-Tell the user which path you chose and what it will create before you start.
+Before starting, tell the user which path was chosen and what it will create.
 
 ## 3. Install
+
+Paths A and B2 use the Compose files each release publishes. They are the hardened
+equivalents of the minimal files in `docs/install.md` (read-only root filesystem,
+dropped capabilities, every setting in `deploy/.env`).
 
 ### A. CPA and OMC together
 
@@ -150,8 +154,8 @@ Then adjust `deploy/.env`:
 - **Time zone.** Add `TZ=` matching CPA's if it is not UTC.
 - **Usage collection.** If something else already collects CPA's usage, ask the user:
   stop that tool so OMC records requests, or keep it and add
-  `OMCPA_USAGE_INGEST_MODE=off` (OMC then manages CPA but shows no usage). If you
-  cannot tell, use `off` and say so. Another management panel that does not collect
+  `OMCPA_USAGE_INGEST_MODE=off` (OMC then manages CPA but shows no usage). If that
+  cannot be determined, use `off` and say so. Another management panel that does not collect
   usage needs nothing; leave it running.
 
 ```bash
@@ -219,7 +223,7 @@ step 4.
 
 ## 6. Tell the user
 
-- The console address, `http://127.0.0.1:8080/omc/` unless you changed the port. On a
+- The console address, `http://127.0.0.1:8080/omc/` unless the port was changed. On a
   remote server, give them `ssh -L 18080:127.0.0.1:8080 user@server` and
   `http://127.0.0.1:18080/omc/`.
 - That the sign-in password is the CPA management key, and which file holds it. Not
@@ -227,9 +231,9 @@ step 4.
 - To back up the `.env` file and OMC's data (the `oh-my-cpa-data` directory or volume). Without `OMCPA_MASTER_KEY` the data
   cannot be read.
 - Whether OMC is collecting usage, and why not if it is off.
-- Anything you changed outside the new `oh-my-cpa` directory.
+- Anything changed outside the new `oh-my-cpa` directory.
 
-OMC redirects the bare `/omc` to `/omc/`. If you put a reverse proxy in front of it,
+OMC redirects the bare `/omc` to `/omc/`. If a reverse proxy sits in front of it,
 route both `/omc` and `/omc/` to OMC (or redirect `/omc` to `/omc/` at the proxy) and
 confirm `curl -sI <public address>/omc` answers `308`; a rule for `/omc/` alone leaves
 the bare path unreachable.

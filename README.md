@@ -23,7 +23,7 @@ MCP · Visualization · Management
 
 **[Live Demo](https://omc-demo.junze.dev)** ·
 [Install](#install) ·
-[For Agents](#let-your-agent-install-it) ·
+[For Agents](#install-with-a-coding-agent) ·
 [Documentation](#documentation) ·
 [简体中文](README.zh-CN.md)
 
@@ -35,11 +35,12 @@ MCP · Visualization · Management
 
 </div>
 
-[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (CPA) adapts protocols, holds
-credentials and proxies requests. **Oh My CPA** is the control plane beside it: a web
-console to run the gateway from, and the usage record the gateway itself does not keep.
-It ships as a single Go binary with the React console embedded and SQLite on local disk,
-with no CDN, no external database and no second password.
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (CPA) is an API gateway: it
+adapts protocols, holds credentials and proxies requests. **Oh My CPA** (OMC) is a web
+console for it. OMC manages the gateway's providers, credentials and configuration, and
+records the usage and cost of every request, which CPA does not store. It is a single Go
+binary with the React console embedded and a local SQLite database, runs offline, and
+signs in with CPA's management key.
 
 <table>
 <tr>
@@ -63,8 +64,8 @@ or as YAML. Model Square lists the model names clients can call, by maker, with 
 
 ### Price
 
-Each request locks its cost when it completes. Prices come from OpenRouter or from you,
-and history never drifts.
+The cost of a request is fixed when it completes. Prices come from OpenRouter or custom
+rates, and later price changes do not alter past records.
 
 </td>
 <td width="25%" valign="top">
@@ -72,7 +73,7 @@ and history never drifts.
 ### Automate
 
 A built-in Agent and an MCP server operate the console through declared capabilities.
-Changes wait for your approval.
+Changes run only after approval.
 
 </td>
 </tr>
@@ -100,7 +101,7 @@ Changes wait for your approval.
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/pricing-dark.en.webp">
   <img src="docs/images/readme/pricing-light.en.webp" alt="Model price book grouped by provider">
 </picture>
-<p align="center"><b>Cost &amp; usage</b><br />A price book matched from OpenRouter, with your own overrides</p>
+<p align="center"><b>Cost &amp; usage</b><br />A price book matched from OpenRouter, with custom overrides</p>
 </td>
 </tr>
 <tr>
@@ -116,140 +117,243 @@ Changes wait for your approval.
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/ai-providers-dark.en.webp">
   <img src="docs/images/readme/ai-providers-light.en.webp" alt="AI provider list with enable switches and traffic">
 </picture>
-<p align="center"><b>AI providers</b><br />Endpoints, models, priority and a real gateway-level enable switch</p>
+<p align="center"><b>AI providers</b><br />Endpoints, models, priority and an enable switch enforced by the gateway</p>
 </td>
 </tr>
 </table>
 
-The screenshots above follow your GitHub theme. The console does the same: light, dark
-or system, each with three built-in palettes and one you colour yourself.
+The screenshots follow the GitHub theme. The console has light, dark and system modes,
+each with three built-in palettes and one custom palette.
 
 <div align="center">
   <img src="docs/images/readme/mobile.en.webp" alt="The dashboard, request records and OAuth management on a phone" width="88%">
-  <p><b>Built for the phone too.</b> Every page reflows for a narrow screen.</p>
+  <p><b>Mobile layout.</b> Every page adapts to a narrow screen.</p>
 </div>
 
 ## Install
 
-OMC runs beside [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) v8 or later,
-and you sign in with CPA's management key. All you need is Docker.
+Requires Docker Engine with the Compose plugin and CLIProxyAPI v8.0.0 or later. The
+commands assume a Linux or macOS shell with `curl` and `openssl`. The console's sign-in
+password is CPA's management key.
 
-### I don't have CPA yet
+| Scenario | Method |
+| --- | --- |
+| CPA is not deployed yet | [New install](#new-install) |
+| CPA is deployed with Docker Compose | [Add to the existing Compose file](#add-to-the-existing-compose-file) |
+| CPA is deployed another way | [Standalone](#standalone) |
 
-This starts CPA and OMC together:
+### New install
 
-```bash
-mkdir -p oh-my-cpa/{deploy,oh-my-cpa-data,cpa/auths,cpa/logs,cpa/plugins} && cd oh-my-cpa
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.full.yml -o deploy/compose.full.yml
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o cpa/config.yaml
-sudo chown 10001:10001 oh-my-cpa-data
+Deploys CPA and OMC together.
 
-cat > deploy/.env <<EOF
-CPA_MANAGEMENT_KEY=$(openssl rand -hex 24)
-OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-EOF
-chmod 600 deploy/.env
+1. Create a directory and save the following as `compose.yml`:
 
-docker compose -f deploy/compose.full.yml up -d
-```
+   ```yaml
+   services:
+     cli-proxy-api:
+       image: eceasy/cli-proxy-api:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8317:8317"
+       environment:
+         MANAGEMENT_PASSWORD: ${CPA_MANAGEMENT_KEY:?}
+       volumes:
+         - ./config.yaml:/CLIProxyAPI/config.yaml
+         - ./auths:/root/.cli-proxy-api
+         - ./logs:/CLIProxyAPI/logs
+         - ./plugins:/CLIProxyAPI/plugins
 
-Open **`http://127.0.0.1:8080/omc/`** (`/omc` redirects there) and sign in with the
-`CPA_MANAGEMENT_KEY` from `deploy/.env`. Then add your providers and client keys in the console.
+     oh-my-cpa:
+       image: wiziscool/oh-my-cpa:latest
+       restart: unless-stopped
+       depends_on:
+         - cli-proxy-api
+       ports:
+         - "127.0.0.1:8080:8080"
+       environment:
+         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+         OMCPA_CPA_MANAGEMENT_KEY: ${CPA_MANAGEMENT_KEY:?}
+         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+         OMCPA_DATA_DIR: /data
+       volumes:
+         - oh-my-cpa-data:/data
 
-### My CPA runs in Docker Compose
+   volumes:
+     oh-my-cpa-data:
+   ```
 
-Add OMC to the Compose file you already have. Paste this under `services:`, next to
-your CPA service:
+2. In the same directory, download the starter configuration for CPA:
 
-```yaml
-  oh-my-cpa:
-    image: wiziscool/oh-my-cpa:latest
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"
-    environment:
-      OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
-      OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
-      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-      OMCPA_DATA_DIR: /data
-    volumes:
-      - oh-my-cpa-data:/data
+   ```bash
+   curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
+   ```
 
-volumes:
-  oh-my-cpa-data:
-```
+3. Generate the two keys. `CPA_MANAGEMENT_KEY` is CPA's management key and the console's
+   sign-in password; `OMCPA_MASTER_KEY` encrypts OMC's database.
 
-Then, in the same directory, add two keys to `.env` and start the new service:
+   ```bash
+   cat > .env <<EOF
+   CPA_MANAGEMENT_KEY=$(openssl rand -hex 24)
+   OMCPA_MASTER_KEY=$(openssl rand -hex 32)
+   EOF
+   chmod 600 .env
+   ```
 
-```bash
-cat >> .env <<EOF
-OMCPA_CPA_MANAGEMENT_KEY=your-cpa-management-key
-OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-EOF
-chmod 600 .env
+4. Start both services:
 
-docker compose up -d oh-my-cpa
-```
+   ```bash
+   docker compose up -d
+   ```
 
-Put your real management key in `.env` before the last command: the plaintext one, not
-the hash in CPA's `config.yaml`. `cli-proxy-api` is the service name in CPA's own
-Compose file; change it if yours differs. The CPA container is not restarted and none of
-its settings or keys change. Open **`http://127.0.0.1:8080/omc/`**.
+5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the `CPA_MANAGEMENT_KEY` value
+   from `.env`. Providers and client keys are added in the console. Clients send requests
+   to CPA at `http://127.0.0.1:8317`.
 
-### My CPA runs some other way
+### Add to the existing Compose file
 
-This runs OMC from its own Compose file and leaves your CPA alone:
+Runs OMC as one more service in the Compose file that already runs CPA.
 
-```bash
-mkdir -p oh-my-cpa/{deploy,oh-my-cpa-data} && cd oh-my-cpa
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.omc.yml -o deploy/compose.omc.yml
-sudo chown 10001:10001 oh-my-cpa-data
+1. Add the service under `services:`. If the file already has a top-level `volumes:`
+   key, add `oh-my-cpa-data:` under it instead of repeating the key.
 
-cat > deploy/.env <<EOF
-OMCPA_CPA_BASE_URL=http://host.docker.internal:8317
-OMCPA_CPA_MANAGEMENT_KEY=your-cpa-management-key
-OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-EOF
-chmod 600 deploy/.env
+   ```yaml
+     oh-my-cpa:
+       image: wiziscool/oh-my-cpa:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8080:8080"
+       environment:
+         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+         OMCPA_DATA_DIR: /data
+       volumes:
+         - oh-my-cpa-data:/data
 
-docker compose -f deploy/compose.omc.yml up -d
-```
+   volumes:
+     oh-my-cpa-data:
+   ```
 
-Put your real management key in `deploy/.env` before the last command: the plaintext
-one, not the hash in CPA's `config.yaml`. If OMC cannot reach CPA, see
-[reaching your CPA](docs/install.md#reaching-your-cpa).
+   `cli-proxy-api` is the service name in CPA's own Compose file. If the service has
+   another name, use it in `OMCPA_CPA_BASE_URL`.
 
-**Switching from another usage tracker?** CPA hands each usage record to one reader
-only. Stop the old tracker and OMC records from then on, or keep it and set
-`OMCPA_USAGE_INGEST_MODE=off` to use OMC for management alone. Other management panels
-can stay; they don't conflict.
+2. In the directory that holds the Compose file, generate the master key:
 
-### Let your agent install it
+   ```bash
+   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+   chmod 600 .env
+   ```
 
-Paste this into Claude Code, Codex, Cursor or any coding agent. It looks at what you
-already run and picks one of the paths above:
+3. Add CPA's management key to `.env`. It is the plaintext key, not the hash stored in
+   CPA's `config.yaml`.
+
+   ```dotenv
+   OMCPA_CPA_MANAGEMENT_KEY=<management key>
+   ```
+
+4. Start OMC. Naming the service leaves the CPA container running as it is.
+
+   ```bash
+   docker compose up -d oh-my-cpa
+   ```
+
+5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
+
+### Standalone
+
+Runs OMC from its own Compose file next to a CPA that runs on the host, in another
+Docker project or on another machine.
+
+1. Create a directory and save the following as `compose.yml`:
+
+   ```yaml
+   services:
+     oh-my-cpa:
+       image: wiziscool/oh-my-cpa:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8080:8080"
+       extra_hosts:
+         - host.docker.internal:host-gateway
+       environment:
+         OMCPA_CPA_BASE_URL: http://host.docker.internal:8317
+         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+         OMCPA_DATA_DIR: /data
+       volumes:
+         - oh-my-cpa-data:/data
+
+   volumes:
+     oh-my-cpa-data:
+   ```
+
+   `OMCPA_CPA_BASE_URL` is CPA's address as seen from inside the container.
+   `http://host.docker.internal:8317` reaches a CPA on the same machine that listens on
+   all interfaces. Other layouts are listed under
+   [reaching CPA](docs/install.md#reaching-cpa).
+
+2. Generate the master key:
+
+   ```bash
+   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+   chmod 600 .env
+   ```
+
+3. Add CPA's management key to `.env`. It is the plaintext key, not the hash stored in
+   CPA's `config.yaml`.
+
+   ```dotenv
+   OMCPA_CPA_MANAGEMENT_KEY=<management key>
+   ```
+
+4. Start OMC:
+
+   ```bash
+   docker compose up -d
+   ```
+
+5. Open **`http://127.0.0.1:8080/omc/`** and sign in with the management key.
+
+### After installing
+
+- **Verify.** `curl -fsS http://127.0.0.1:8080/omc/api/healthz` returns `"status":"ok"`
+  and `"cpa_connected":true` once OMC has reached CPA. A `"degraded"` status means the
+  CPA address or management key is wrong, or CPA refuses remote management.
+- **Back up `.env`.** `OMCPA_MASTER_KEY` encrypts the database, and the data cannot be
+  read without it.
+- **One usage collector per CPA.** CPA hands each usage record to a single reader. If
+  another usage tracker reads the same CPA, stop it, or add
+  `OMCPA_USAGE_INGEST_MODE: "off"` under `environment:` to use OMC for management only.
+  Other management panels do not conflict.
+
+> [!NOTE]
+> The Compose files above are the minimum that runs. Each release also publishes
+> `compose.full.yml` and `compose.omc.yml`, which add a read-only root filesystem,
+> dropped capabilities, health-gated startup and settings driven entirely by `.env`. See
+> [release Compose files](docs/install.md#release-compose-files).
+
+Remote access, HTTPS, building from source, upgrades and troubleshooting are in the
+[installation guide](docs/install.md).
+
+### Install with a coding agent
+
+Paste the following into Claude Code, Codex, Cursor or another coding agent. The agent
+inspects the machine and follows the matching scenario:
 
 ```text
 Install Oh My CPA for me by following
 https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
 ```
 
-> [!IMPORTANT]
-> Back up the `.env` file you just wrote. `OMCPA_MASTER_KEY` encrypts the database, and without it the
-> data cannot be read.
-
-Remote servers, HTTPS, building from source, upgrades and troubleshooting are in the
-[installation guide](docs/install.md).
-
 ## Agents and MCP
 
-**In the console.** The `/agent` page lets a model you already route through CPA answer
-questions and operate the console: usage and request analysis, providers, OAuth, quota,
-client keys, configuration and pricing. Reads run directly. Changes are prepared
-server-side and wait for one Allow or Deny. Secrets, tokens and OAuth authorization
+**In the console.** On the `/agent` page, a model routed through CPA answers questions
+and operates the console: usage and request analysis, providers, OAuth, quota, client
+keys, configuration and pricing. Reads run directly. Changes are prepared server-side
+and run only after an Allow in the console. Secrets, tokens and OAuth authorization
 never enter the model's context.
 
-**From your own agent.** The same capabilities are available over MCP from the binary
+**From an external agent.** The same capabilities are available over MCP from the binary
 itself:
 
 ```json
@@ -260,7 +364,7 @@ itself:
       "args": ["mcp"],
       "env": {
         "OMCPA_SERVER_URL": "https://cpa.example.com/omc",
-        "OMCPA_CPA_MANAGEMENT_KEY": "<your CPA management key>"
+        "OMCPA_CPA_MANAGEMENT_KEY": "<CPA management key>"
       }
     }
   }
@@ -269,7 +373,7 @@ itself:
 
 An external agent can read state and prepare an operation, but cannot approve it, submit
 a secret or complete an OAuth sign-in. The management key is administrator-equivalent,
-so connect only agents you would trust with the console.
+so connect only agents trusted with full access to the console.
 [`docs/agent-capabilities.md`](docs/agent-capabilities.md) is the contract.
 
 ## Features
@@ -277,8 +381,8 @@ so connect only agents you would trust with the console.
 <details open>
 <summary><b>Gateway & providers</b></summary>
 
-- **AI providers**: Codex, Claude, Gemini, Meta Muse, xAI, Vertex AI, Gemini Interactions, DeepSeek and OpenAI-compatible services, each with credentials, models, priority, weight, proxy and an enable switch the gateway actually enforces.
-- **OAuth management**: sign in from the console for Codex, Claude, Antigravity, xAI, Kimi, Devin and Meta Muse; manage auth files, model lists and quota per credential, plus provider-wide model aliases and exclusion rules, with scoped capacity estimates for Codex, Claude and supported Antigravity groups, plus labelled previous-cycle references.
+- **AI providers**: Codex, Claude, Gemini, Meta Muse, xAI, Vertex AI, Gemini Interactions, DeepSeek and OpenAI-compatible services, each with credentials, models, priority, weight, proxy and an enable switch enforced by the gateway.
+- **OAuth management**: sign in from the console for Codex, Claude, Antigravity, xAI, Kimi, Devin and Meta Muse. Auth files, model lists and quota are managed per credential; model aliases and exclusion rules apply provider-wide. Window capacity is estimated for Codex, Claude and supported Antigravity groups, with the previous cycle shown as a labelled reference.
 - **Client keys**: create, name and revoke gateway API keys. Names appear in request records and filters.
 - **Model catalog**: pull model lists straight from upstream providers.
 - **Playground**: test any routed model with text and images, streamed multi-turn answers and request diagnostics.
@@ -302,7 +406,7 @@ so connect only agents you would trust with the console.
 
 - **Request-time snapshots**: a request's cost is fixed by immutable price versions when it completes.
 - **OpenRouter price book**: every served model priced from OpenRouter's public list, including long-context and time-of-day tiers.
-- **Linked and custom prices**: pin a model to an OpenRouter entry or set your own rates, with tier presets and a calculator.
+- **Linked and custom prices**: pin a model to an OpenRouter entry or set custom rates, with tier presets and a calculator.
 - **Channel multipliers**: scale everything one provider answers, for example a relay billed at 30% of list.
 
 </details>
@@ -314,8 +418,8 @@ so connect only agents you would trust with the console.
 - **Automatic config backups**: an encrypted copy of `config.yaml` before every change, restorable from the console.
 - **Encryption at rest**: stored credentials and raw usage messages are AES-GCM encrypted.
 - **Audited sensitive actions**: revealing keys, downloading auth files and exporting logs are written to the audit log, and refused if that write fails.
-- **Offline by design**: every asset is in the binary, with no CDN to reach.
-- **Yours to arrange**: four interface languages, light and dark themes with custom palettes, a deployment time zone, and K/M/B or 万/亿 number units.
+- **Offline operation**: every asset is embedded in the binary; no CDN is contacted.
+- **Personalization**: four interface languages, light and dark themes with custom palettes, a deployment time zone, and K/M/B or 万/亿 number units.
 
 </details>
 
@@ -343,10 +447,10 @@ Browser ──▶ Direct listener / existing HTTPS ingress ──▶ Oh My CPA (
 | `OMCPA_CPA_MANAGEMENT_KEY` | required | CPA's management key, and the console's sign-in password |
 | `OMCPA_MASTER_KEY` | required | At-rest encryption key (`openssl rand -hex 32`) |
 | `OMCPA_BASE_PATH` | `/omc` | Sub-path the console is served under |
-| `OMCPA_DATA_DIR` | `./data` | Where the SQLite database lives |
+| `OMCPA_DATA_DIR` | `./data` | Directory of the SQLite database; the Compose files set `/data` |
 | `OMCPA_PUBLIC_URL` | unset | The address browsers use; `https://` marks the session cookie `Secure` |
 | `OMCPA_USAGE_INGEST_MODE` | `auto` | `off` when another service collects this CPA's usage |
-| `TZ` | system zone | Server calendar; keep it equal to CPA's |
+| `TZ` | system zone | Server calendar; keep it equal to CPA's. Containers default to UTC |
 
 The full reference, with deployment constraints and operational notes, is
 [`docs/operations.md`](docs/operations.md).
@@ -377,8 +481,8 @@ pnpm dev          # Air + Vite with hot reload at http://127.0.0.1:5173/omc/
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm test:fast` | The checks your working-tree changes affect |
-| `pnpm check:ui` | The browser scenarios your change can reach |
+| `pnpm test:fast` | The checks affected by working-tree changes |
+| `pnpm check:ui` | The browser scenarios a change can reach |
 | `pnpm verify` | The static gate to run before pushing |
 | `pnpm verify:full` | Everything CI runs, locally |
 | `pnpm readme:screenshots` | Regenerate the screenshots on this page from demo mode |
@@ -394,8 +498,8 @@ public issue.
 
 ## Acknowledgements
 
-Oh My CPA exists because of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI),
-which does the hard part.
+Oh My CPA is built on [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), which
+handles protocol adaptation, credentials and request proxying.
 
 Thanks also to the [Linux.do community](https://linux.do).
 

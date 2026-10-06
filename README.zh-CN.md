@@ -23,7 +23,7 @@ MCP · 可视化 · 管理
 
 **[在线演示](https://omc-demo.junze.dev)** ·
 [安装](#安装) ·
-[交给 Agent](#让-agent-帮你安装) ·
+[Agent 安装](#通过编码-agent-安装) ·
 [文档](#文档) ·
 [English](README.md)
 
@@ -35,9 +35,9 @@ MCP · 可视化 · 管理
 
 </div>
 
-[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）负责协议适配、凭据执行与请求代理。
-**Oh My CPA** 是它旁边的控制面：一个用来运营网关的 Web 控制台，以及网关自身并不保存的用量记录。
-它以单个 Go 二进制交付，内嵌 React 控制台，数据存放在本地 SQLite，无需 CDN、无需外部数据库，也没有第二套密码。
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）是一个 API 网关，负责协议适配、凭据管理与请求代理。
+**Oh My CPA**（OMC）是配套的 Web 控制台：管理网关的提供商、凭据与配置，并记录每条请求的用量与费用（CPA 本身不保存这些记录）。
+OMC 是单个 Go 二进制文件，内嵌 React 控制台，数据存放在本地 SQLite，可离线运行，登录使用 CPA 的管理密钥。
 
 <table>
 <tr>
@@ -45,7 +45,7 @@ MCP · 可视化 · 管理
 
 ### 观测
 
-实时仪表盘、全年 Token 热力图，以及可多维筛选的请求记录：耗时、首字延迟、Token 与费用一目了然。
+实时仪表盘、全年 Token 热力图，以及可按多个维度筛选的请求记录，包含耗时、首字延迟、Token 与费用。
 
 </td>
 <td width="25%" valign="top">
@@ -59,14 +59,14 @@ MCP · 可视化 · 管理
 
 ### 计费
 
-每条请求在完成时锁定费用。价格来自 OpenRouter 或由你自定义，历史账目不会随调价漂移。
+每条请求的费用在完成时确定。价格取自 OpenRouter 或自定义费率，之后调价不影响已有记录。
 
 </td>
 <td width="25%" valign="top">
 
 ### 自动化
 
-内置智能体与 MCP 服务通过声明式能力操作控制台，所有变更都需经你批准。
+内置智能体与 MCP 服务通过预先声明的能力操作控制台，变更需经批准后执行。
 
 </td>
 </tr>
@@ -110,133 +110,229 @@ MCP · 可视化 · 管理
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/ai-providers-dark.zh.webp">
   <img src="docs/images/readme/ai-providers-light.zh.webp" alt="AI 提供商列表、启停开关与流量">
 </picture>
-<p align="center"><b>AI 提供商</b><br />端点、模型、优先级，以及在网关层真正生效的启停开关</p>
+<p align="center"><b>AI 提供商</b><br />端点、模型、优先级，以及由网关执行的启停开关</p>
 </td>
 </tr>
 </table>
 
-以上截图会跟随你的 GitHub 主题切换。控制台本身也一样：浅色、深色或跟随系统，每种模式各有三套内置配色，还可以自定义一套。
+以上截图跟随 GitHub 主题切换。控制台支持浅色、深色与跟随系统三种模式，每种模式有三套内置配色和一套自定义配色。
 
 <div align="center">
   <img src="docs/images/readme/mobile.zh.webp" alt="手机上的仪表盘、请求记录与 OAuth 管理" width="88%">
-  <p><b>手机上同样好用。</b>每个页面都为窄屏重新排版。</p>
+  <p><b>移动端布局。</b>每个页面都适配窄屏。</p>
 </div>
 
 ## 安装
 
-OMC 搭配 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) v8 及以上使用，
-登录密码就是 CPA 的管理密钥。只需要 Docker。
+环境要求：Docker Engine（含 Compose 插件），CLIProxyAPI v8.0.0 及以上。
+命令按 Linux 或 macOS 终端编写，需要 `curl` 与 `openssl`。控制台的登录密码是 CPA 的管理密钥。
 
-### 还没有 CPA
+| 安装场景 | 方案 |
+| --- | --- |
+| 尚未部署 CPA | [全新安装](#全新安装) |
+| CPA 由 Docker Compose 部署 | [加入现有编排文件](#加入现有编排文件) |
+| CPA 以其他方式部署 | [独立部署](#独立部署) |
 
-一次把 CPA 和 OMC 都装上：
+### 全新安装
 
-```bash
-mkdir -p oh-my-cpa/{deploy,oh-my-cpa-data,cpa/auths,cpa/logs,cpa/plugins} && cd oh-my-cpa
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.full.yml -o deploy/compose.full.yml
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o cpa/config.yaml
-sudo chown 10001:10001 oh-my-cpa-data
+同时部署 CPA 与 OMC。
 
-cat > deploy/.env <<EOF
-CPA_MANAGEMENT_KEY=$(openssl rand -hex 24)
-OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-EOF
-chmod 600 deploy/.env
+1. 新建一个目录，将以下内容保存为 `compose.yml`：
 
-docker compose -f deploy/compose.full.yml up -d
-```
+   ```yaml
+   services:
+     cli-proxy-api:
+       image: eceasy/cli-proxy-api:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8317:8317"
+       environment:
+         MANAGEMENT_PASSWORD: ${CPA_MANAGEMENT_KEY:?}
+       volumes:
+         - ./config.yaml:/CLIProxyAPI/config.yaml
+         - ./auths:/root/.cli-proxy-api
+         - ./logs:/CLIProxyAPI/logs
+         - ./plugins:/CLIProxyAPI/plugins
 
-打开 **`http://127.0.0.1:8080/omc/`**（`/omc` 会自动跳转到这里），用 `deploy/.env` 里的 `CPA_MANAGEMENT_KEY` 登录，
-然后在控制台里添加提供商和客户端密钥。
+     oh-my-cpa:
+       image: wiziscool/oh-my-cpa:latest
+       restart: unless-stopped
+       depends_on:
+         - cli-proxy-api
+       ports:
+         - "127.0.0.1:8080:8080"
+       environment:
+         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+         OMCPA_CPA_MANAGEMENT_KEY: ${CPA_MANAGEMENT_KEY:?}
+         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+         OMCPA_DATA_DIR: /data
+       volumes:
+         - oh-my-cpa-data:/data
 
-### CPA 是用 Docker Compose 部署的
+   volumes:
+     oh-my-cpa-data:
+   ```
 
-直接把 OMC 加进你现有的编排文件。把下面这段贴到 `services:` 下面，和 CPA 服务并列：
+2. 在同一目录下载 CPA 的初始配置：
 
-```yaml
-  oh-my-cpa:
-    image: wiziscool/oh-my-cpa:latest
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"
-    environment:
-      OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
-      OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
-      OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
-      OMCPA_DATA_DIR: /data
-    volumes:
-      - oh-my-cpa-data:/data
+   ```bash
+   curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
+   ```
 
-volumes:
-  oh-my-cpa-data:
-```
+3. 生成两个密钥。`CPA_MANAGEMENT_KEY` 是 CPA 的管理密钥，也是控制台的登录密码；
+   `OMCPA_MASTER_KEY` 用于加密 OMC 的数据库。
 
-然后在同一个目录下，往 `.env` 里加两个密钥，启动新服务：
+   ```bash
+   cat > .env <<EOF
+   CPA_MANAGEMENT_KEY=$(openssl rand -hex 24)
+   OMCPA_MASTER_KEY=$(openssl rand -hex 32)
+   EOF
+   chmod 600 .env
+   ```
 
-```bash
-cat >> .env <<EOF
-OMCPA_CPA_MANAGEMENT_KEY=your-cpa-management-key
-OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-EOF
-chmod 600 .env
+4. 启动两个服务：
 
-docker compose up -d oh-my-cpa
-```
+   ```bash
+   docker compose up -d
+   ```
 
-执行最后一条命令前，先把 `.env` 里的管理密钥换成你自己的：要填明文，
-不是 CPA `config.yaml` 里的哈希。`cli-proxy-api` 是 CPA 官方编排文件里的服务名，
-你的不一样就改掉。CPA 容器不会重启，它的配置和密钥也都不会变。
-打开 **`http://127.0.0.1:8080/omc/`**。
+5. 访问 **`http://127.0.0.1:8080/omc/`**，以 `.env` 中 `CPA_MANAGEMENT_KEY` 的值登录。
+   提供商与客户端密钥在控制台中添加。客户端请求发往 CPA：`http://127.0.0.1:8317`。
 
-### CPA 是用其他方式部署的
+### 加入现有编排文件
 
-OMC 用自己的编排文件单独运行，不动你现有的 CPA：
+将 OMC 作为一个服务，加入已在运行 CPA 的编排文件。
 
-```bash
-mkdir -p oh-my-cpa/{deploy,oh-my-cpa-data} && cd oh-my-cpa
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.omc.yml -o deploy/compose.omc.yml
-sudo chown 10001:10001 oh-my-cpa-data
+1. 在 `services:` 下添加以下服务。文件已有顶层 `volumes:` 时，只在其下追加
+   `oh-my-cpa-data:`，不要重复该键。
 
-cat > deploy/.env <<EOF
-OMCPA_CPA_BASE_URL=http://host.docker.internal:8317
-OMCPA_CPA_MANAGEMENT_KEY=your-cpa-management-key
-OMCPA_MASTER_KEY=$(openssl rand -hex 32)
-EOF
-chmod 600 deploy/.env
+   ```yaml
+     oh-my-cpa:
+       image: wiziscool/oh-my-cpa:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8080:8080"
+       environment:
+         OMCPA_CPA_BASE_URL: http://cli-proxy-api:8317
+         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+         OMCPA_DATA_DIR: /data
+       volumes:
+         - oh-my-cpa-data:/data
 
-docker compose -f deploy/compose.omc.yml up -d
-```
+   volumes:
+     oh-my-cpa-data:
+   ```
 
-执行最后一条命令前，先把 `deploy/.env` 里的管理密钥换成你自己的：要填明文，
-不是 CPA `config.yaml` 里的哈希。OMC 连不上 CPA 的话，
-看[连接已有的 CPA](docs/install.md#reaching-your-cpa)。
+   `cli-proxy-api` 是 CPA 官方编排文件中的服务名。服务名不同时，
+   在 `OMCPA_CPA_BASE_URL` 中改用实际名称。
 
-**从别的用量统计工具换过来？** CPA 的每条用量记录只会交给一个读取方。
-停掉原来的统计工具，OMC 就从那一刻开始记录；想两边都留着，就设
-`OMCPA_USAGE_INGEST_MODE=off`，只用 OMC 做管理。其他管理面板可以照常保留，互不冲突。
+2. 在编排文件所在目录生成主密钥：
 
-### 让 Agent 帮你安装
+   ```bash
+   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+   chmod 600 .env
+   ```
 
-把下面这段交给 Claude Code、Codex、Cursor 或其他编码 Agent。
-它会先看你机器上已有什么，再从上面两种方式里选一种：
+3. 将 CPA 的管理密钥写入 `.env`。填写明文，而非 CPA `config.yaml` 中保存的哈希。
+
+   ```dotenv
+   OMCPA_CPA_MANAGEMENT_KEY=<管理密钥>
+   ```
+
+4. 启动 OMC。命令中指定服务名，CPA 容器保持原样运行，不会重启。
+
+   ```bash
+   docker compose up -d oh-my-cpa
+   ```
+
+5. 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
+
+### 独立部署
+
+OMC 使用单独的编排文件运行，适用于 CPA 运行在宿主机、其他 Docker 项目或另一台机器上的情况。
+
+1. 新建一个目录，将以下内容保存为 `compose.yml`：
+
+   ```yaml
+   services:
+     oh-my-cpa:
+       image: wiziscool/oh-my-cpa:latest
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8080:8080"
+       extra_hosts:
+         - host.docker.internal:host-gateway
+       environment:
+         OMCPA_CPA_BASE_URL: http://host.docker.internal:8317
+         OMCPA_CPA_MANAGEMENT_KEY: ${OMCPA_CPA_MANAGEMENT_KEY:?}
+         OMCPA_MASTER_KEY: ${OMCPA_MASTER_KEY:?}
+         OMCPA_DATA_DIR: /data
+       volumes:
+         - oh-my-cpa-data:/data
+
+   volumes:
+     oh-my-cpa-data:
+   ```
+
+   `OMCPA_CPA_BASE_URL` 是从容器内部访问 CPA 的地址。
+   `http://host.docker.internal:8317` 适用于 CPA 在同一台机器上并监听所有网卡的情况，
+   其他情况见[连接 CPA](docs/install.md#reaching-cpa)。
+
+2. 生成主密钥：
+
+   ```bash
+   echo "OMCPA_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+   chmod 600 .env
+   ```
+
+3. 将 CPA 的管理密钥写入 `.env`。填写明文，而非 CPA `config.yaml` 中保存的哈希。
+
+   ```dotenv
+   OMCPA_CPA_MANAGEMENT_KEY=<管理密钥>
+   ```
+
+4. 启动 OMC：
+
+   ```bash
+   docker compose up -d
+   ```
+
+5. 访问 **`http://127.0.0.1:8080/omc/`**，以管理密钥登录。
+
+### 安装后
+
+- **验证。** OMC 连上 CPA 后，`curl -fsS http://127.0.0.1:8080/omc/api/healthz`
+  返回 `"status":"ok"` 与 `"cpa_connected":true`。状态为 `"degraded"` 表示 CPA 地址或管理密钥有误，
+  或 CPA 未允许远程管理。
+- **备份 `.env`。** `OMCPA_MASTER_KEY` 是数据库的加密密钥，丢失后数据无法读取。
+- **每个 CPA 只能有一个用量采集方。** CPA 的每条用量记录只交给一个读取方。
+  同一个 CPA 上已有其他用量统计工具时，停用该工具，或在 `environment:` 下添加
+  `OMCPA_USAGE_INGEST_MODE: "off"`，仅将 OMC 用于管理。其他管理面板不冲突。
+
+> [!NOTE]
+> 以上编排文件是可运行的最小配置。每个版本另外发布 `compose.full.yml` 与 `compose.omc.yml`，
+> 增加只读根文件系统、能力裁剪、按健康状态排序的启动，以及完全由 `.env` 驱动的配置项，
+> 见[发布版编排文件](docs/install.md#release-compose-files)。
+
+远程访问、HTTPS、源码构建、升级与排障见[安装指南](docs/install.md)（英文）。
+
+### 通过编码 Agent 安装
+
+将以下内容交给 Claude Code、Codex、Cursor 或其他编码 Agent。Agent 会检查机器现状，并按对应的安装场景执行：
 
 ```text
 按照这份指南帮我安装 Oh My CPA：
 https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-agents.md
 ```
 
-> [!IMPORTANT]
-> 备份刚写好的 `.env` 文件。`OMCPA_MASTER_KEY` 是数据库的加密密钥，丢了数据就读不出来。
-
-远程服务器、HTTPS、源码构建、升级和排障见[安装指南](docs/install.md)（英文）。
-
 ## 智能体与 MCP
 
-**在控制台里。** `/agent` 页面让一个已经通过 CPA 路由的模型回答问题并操作控制台：
+**控制台内。** 在 `/agent` 页面，由 CPA 路由的模型回答问题并操作控制台：
 用量与请求分析、提供商、OAuth、配额、客户端密钥、配置与定价。读操作直接执行；
-变更在服务端预备好之后，等你点一次「允许」或「拒绝」。密钥、令牌与 OAuth 授权不会进入模型上下文。
+变更先在服务端生成，在控制台点击「允许」后才执行。密钥、令牌与 OAuth 授权不会进入模型上下文。
 
-**在你自己的 Agent 里。** 同一套能力也通过二进制自带的 MCP 服务提供：
+**外部 Agent。** 同一套能力也通过二进制自带的 MCP 服务提供：
 
 ```json
 {
@@ -246,24 +342,24 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
       "args": ["mcp"],
       "env": {
         "OMCPA_SERVER_URL": "https://cpa.example.com/omc",
-        "OMCPA_CPA_MANAGEMENT_KEY": "<你的 CPA 管理密钥>"
+        "OMCPA_CPA_MANAGEMENT_KEY": "<CPA 管理密钥>"
       }
     }
   }
 }
 ```
 
-外部 Agent 可以读取状态、预备一项操作，但不能批准它、提交密钥或完成 OAuth 登录。
-管理密钥等同于管理员权限，请只接入你愿意把控制台交给它的 Agent。
-契约见 [`docs/agent-capabilities.md`](docs/agent-capabilities.md)。
+外部 Agent 可以读取状态、发起操作，但不能批准操作、提交密钥或完成 OAuth 登录。
+管理密钥等同于管理员权限，只应接入可信的 Agent。
+能力清单与权限规则见 [`docs/agent-capabilities.md`](docs/agent-capabilities.md)。
 
 ## 功能特性
 
 <details open>
 <summary><b>网关与提供商</b></summary>
 
-- **AI 提供商**：Codex、Claude、Gemini、Meta Muse、xAI、Vertex AI、Gemini Interactions、DeepSeek 及 OpenAI 兼容服务，统一管理凭据、模型、优先级、权重、代理，以及在网关层真正生效的启停开关。
-- **OAuth 管理**：在控制台直接登录 Codex、Claude、Antigravity、xAI、Kimi、Devin 与 Meta Muse；按凭据管理认证文件、模型列表与配额，按提供商配置全局模型别名和禁用规则，支持 Codex、Claude 与已知 Antigravity 模型组的窗口额度估算，并明确标注上一周期的参考估值。
+- **AI 提供商**：Codex、Claude、Gemini、Meta Muse、xAI、Vertex AI、Gemini Interactions、DeepSeek 及 OpenAI 兼容服务，统一管理凭据、模型、优先级、权重、代理，以及由网关执行的启停开关。
+- **OAuth 管理**：在控制台登录 Codex、Claude、Antigravity、xAI、Kimi、Devin 与 Meta Muse。认证文件、模型列表与配额按凭据管理；模型别名与禁用规则按提供商统一配置。Codex、Claude 与已支持的 Antigravity 模型组提供窗口额度估算，上一周期的数值作为参考并单独标注。
 - **客户端密钥**：创建、命名与吊销网关 API Key，名称会出现在请求记录与筛选项中。
 - **模型目录**：直接从上游提供商拉取模型列表。
 - **操练场**：用文本与图片调试任意已路由的模型，支持流式多轮对话与请求诊断。
@@ -276,9 +372,9 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 
 - **仪表盘**：请求量、Token 吞吐、缓存命中率与费用，支持 15 分钟到 90 天的预设窗口、安装以来的“全部”窗口或任意自定义区间；统计数据永久保留，请求记录按保留期滚动清理，并提供全年 Token 热力图。
 - **模型面板**：Token 趋势与用量环形图，可按调用点或上游模型统计，并展示费用占比。
-- **请求记录**：多选分面筛选与全文搜索；详情抽屉展示耗时、首字延迟、Token 明细与单请求原始日志。每条记录保留上游实际返回的模型，与请求模型不同时会被标出。
+- **请求记录**：多条件筛选与全文搜索；详情抽屉展示耗时、首字延迟、Token 明细与单请求原始日志。每条记录保留上游实际返回的模型，与请求模型不同时会被标出。
 - **后台采集**：无论是否打开浏览器，用量都会通过流式订阅或轮询持续入库。
-- **日志与审计**：尾随网关日志、查看控制台自身的服务日志，并浏览带筛选与 JSON 导出的追加式操作审计。
+- **日志与审计**：实时查看网关日志与控制台自身的服务日志；操作审计记录只增不改，支持筛选与 JSON 导出。
 
 </details>
 
@@ -299,8 +395,8 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 - **配置自动备份**：每次改写 `config.yaml` 之前自动保存一份加密副本，可在控制台恢复。
 - **静态加密**：已存储的凭据与原始用量消息采用 AES-GCM 加密。
 - **敏感操作审计**：查看密钥、下载认证文件、导出日志等操作都会写入审计日志，写入失败则拒绝执行。
-- **为离线而设计**：所有资源都在二进制内，无需访问任何 CDN。
-- **按你的习惯来**：四种界面语言、可自定义配色的浅色与深色主题、部署时区，以及 K/M/B 或 万/亿 数字单位。
+- **离线运行**：所有资源内嵌于二进制文件，不访问 CDN。
+- **个性化**：四种界面语言、可自定义配色的浅色与深色主题、部署时区，以及 K/M/B 或 万/亿 数字单位。
 
 </details>
 
@@ -316,9 +412,9 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 - **单二进制**：React 控制台内嵌在 Go 可执行文件中。
 - **单副本**：SQLite WAL 模式，每个数据目录只允许一个进程。
 - **原生支持子路径**：默认挂载在 `/omc`（`OMCPA_BASE_PATH`），可与 CPA 共用同一个主机名。
-- **白名单门面**：控制台从不透传 CPA 的原始响应，也不代理任意 URL。
+- **接口白名单**：控制台只转发明确列出的接口与字段，不透传 CPA 的原始响应，也不代理任意 URL。
 
-模块划分、数据流与不变量见 [`docs/architecture.md`](docs/architecture.md)。
+模块划分、数据流与架构约束见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 配置
 
@@ -328,10 +424,10 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 | `OMCPA_CPA_MANAGEMENT_KEY` | 必填 | CPA 管理密钥，同时是控制台登录密码 |
 | `OMCPA_MASTER_KEY` | 必填 | 静态加密密钥（`openssl rand -hex 32`） |
 | `OMCPA_BASE_PATH` | `/omc` | 控制台挂载的子路径 |
-| `OMCPA_DATA_DIR` | `./data` | SQLite 数据库所在目录 |
+| `OMCPA_DATA_DIR` | `./data` | SQLite 数据库所在目录；编排文件中设为 `/data` |
 | `OMCPA_PUBLIC_URL` | 未设置 | 浏览器访问的地址；为 `https://` 时会话 Cookie 带 `Secure` 标记 |
 | `OMCPA_USAGE_INGEST_MODE` | `auto` | 已有其他服务采集该 CPA 的用量时设为 `off` |
-| `TZ` | 系统时区 | 服务器日历；请与 CPA 保持一致 |
+| `TZ` | 系统时区 | 服务器日历，需与 CPA 一致；容器内默认为 UTC |
 
 完整的配置参考、部署约束与运维须知见 [`docs/operations.md`](docs/operations.md)。
 
@@ -346,10 +442,10 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 | [`docs/releasing.md`](docs/releasing.md) | Docker Hub 镜像与 GitHub 标签发布流程 |
 | [`docs/operations.md`](docs/operations.md) | 配置参考与运维须知 |
 | [`docs/ops/sqlite-operations.md`](docs/ops/sqlite-operations.md) | 备份、恢复与主密钥管理手册 |
-| [`docs/agent-capabilities.md`](docs/agent-capabilities.md) | 智能体能力契约与 MCP 桥接 |
-| [`docs/architecture.md`](docs/architecture.md) | 模块边界、数据流与不变量 |
+| [`docs/agent-capabilities.md`](docs/agent-capabilities.md) | 智能体能力清单、权限规则与 MCP 接入 |
+| [`docs/architecture.md`](docs/architecture.md) | 模块边界、数据流与架构约束 |
 | [`docs/cpa-v8-compat.md`](docs/cpa-v8-compat.md) | CPA v8 基线与配置字段迁移对照 |
-| [`docs/cpamc-parity.md`](docs/cpamc-parity.md) | 与官方 CPA 管理中心的功能对位 |
+| [`docs/cpamc-parity.md`](docs/cpamc-parity.md) | 与官方 CPA 管理中心的功能对照 |
 | [`CONTEXT.md`](CONTEXT.md) · [`docs/design.md`](docs/design.md) | 领域术语 · 视觉系统 |
 | [`docs/ops/cloudflare-demo.md`](docs/ops/cloudflare-demo.md) | 在线演示的部署方式 |
 
@@ -370,7 +466,7 @@ pnpm dev          # Air + Vite 热重载，地址 http://127.0.0.1:5173/omc/
 | `pnpm readme:screenshots` | 用演示模式重新生成本页截图 |
 
 环境搭建与验证流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；
-[`AGENTS.md`](AGENTS.md) 是编码 Agent 在本仓库中遵循的契约。
+[`AGENTS.md`](AGENTS.md) 是编码 Agent 在本仓库中遵循的约定。
 
 ## 贡献与安全
 
@@ -379,7 +475,7 @@ pnpm dev          # Air + Vite 热重载，地址 http://127.0.0.1:5173/omc/
 
 ## 致谢
 
-Oh My CPA 的存在离不开 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)，最难的部分由它完成。
+Oh My CPA 基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 构建，协议适配、凭据管理与请求代理均由后者完成。
 
 也感谢 [Linux.do 社区](https://linux.do)。
 
