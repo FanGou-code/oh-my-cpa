@@ -70,6 +70,8 @@ export interface QuotaExtraUsage {
 }
 
 export interface QuotaPlan {
+  /** Whether the provider reports an active subscription; absent when unknown. */
+  subscription_active?: boolean;
   plan_type: string;
   plan_label: string;
   tier: 'elite' | 'premium' | 'standard' | 'free' | 'unknown';
@@ -80,6 +82,14 @@ export interface QuotaPlan {
   /** Whether upstream says the plan renews; absent when the source does not expose it. */
   auto_renews?: boolean;
   extra_usage?: QuotaExtraUsage;
+  /** Prepaid credit standing; absent when the provider reports none. */
+  credits?: QuotaCredits;
+}
+
+export interface QuotaCredits {
+  /** Upstream's decimal text; absent when credits are unlimited. */
+  balance?: string;
+  unlimited?: boolean;
 }
 
 export interface CodexResetCredit {

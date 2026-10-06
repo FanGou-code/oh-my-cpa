@@ -25,7 +25,12 @@ const (
 	AntigravityQuotaURLDaily   = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
 	AntigravityQuotaURLSandbox = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary"
 	AntigravityQuotaURLCloud   = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+	AntigravitySubscriptionURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+	MetaUsageURL               = "https://api.meta.ai/muse-code/key"
+	XaiSubscriptionURL         = "https://cli-chat-proxy.grok.com/v1/user?include=subscription"
+	XaiSettingsURL             = "https://cli-chat-proxy.grok.com/v1/settings"
 	KimiUsageURL               = "https://api.kimi.com/coding/v1/usages"
+	KimiInternationalUsageURL  = "https://api.kimi.ai/coding/v1/usages"
 	XaiBillingMonthlyURL       = "https://cli-chat-proxy.grok.com/v1/billing"
 	XaiBillingWeeklyURL        = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
 	XaiApiMeURL                = "https://api.x.ai/v1/me"
@@ -52,9 +57,14 @@ var AllowedURLPrefixes = []string{
 	"https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
 	"https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
 	"https://api.kimi.com/coding/v1/",
+	KimiInternationalUsageURL,
 	"https://cli-chat-proxy.grok.com/v1/billing",
 	"https://api.x.ai/v1/",
 	DevinSeatStatusURL,
+	MetaUsageURL,
+	AntigravitySubscriptionURL,
+	"https://cli-chat-proxy.grok.com/v1/user",
+	XaiSettingsURL,
 }
 
 // IsAllowedQuotaURL verifies that a target URL is in the strict quota allowlist.
@@ -128,6 +138,8 @@ func DetectProvider(fileType, provider string) string {
 		return "kimi"
 	case strings.Contains(t, "xai") || strings.Contains(p, "xai") || strings.Contains(t, "grok") || strings.Contains(p, "grok"):
 		return "xai"
+	case t == "meta" || p == "meta" || t == "meta-muse" || p == "meta-muse" || t == "meta_muse" || p == "meta_muse":
+		return "meta"
 	case strings.Contains(t, "devin") || strings.Contains(p, "devin"):
 		return "devin"
 	default:
@@ -151,7 +163,7 @@ func CapabilitiesForProvider(provider string) QuotaCapabilities {
 			ClearCooldownSupported: true,
 			ResetCreditSupported:   true,
 		}
-	case "claude", "antigravity", "kimi", "xai", "devin":
+	case "claude", "antigravity", "kimi", "xai", "devin", "meta":
 		return QuotaCapabilities{
 			RefreshSupported:       true,
 			ClearCooldownSupported: true,
@@ -307,9 +319,7 @@ func (s *Service) RefreshCredentialQuota(ctx context.Context, file management.Au
 			fetchErr = err
 		} else {
 			result.Windows = windows
-			if result.Plan == nil {
-				result.Plan = ResolveAntigravityPlan("pro")
-			}
+			result.Plan = s.fetchAntigravitySubscription(ctx, file)
 		}
 
 	case "kimi":
@@ -325,6 +335,15 @@ func (s *Service) RefreshCredentialQuota(ctx context.Context, file management.Au
 
 	case "xai":
 		plan, windows, err := s.fetchXaiQuota(ctx, file, nowMS)
+		if err != nil {
+			fetchErr = err
+		} else {
+			result.Plan = plan
+			result.Windows = windows
+		}
+
+	case "meta":
+		plan, windows, err := s.fetchMetaQuota(ctx, file, nowMS)
 		if err != nil {
 			fetchErr = err
 		} else {
@@ -583,11 +602,28 @@ func (s *Service) fetchAntigravityQuota(ctx context.Context, file management.Aut
 	return nil, errors.New("antigravity quota query failed")
 }
 
+// kimiUsageURLFor picks the host a Kimi credential's usage is read from.
+//
+// kimi.com and kimi.ai are separate account systems: a token of one is refused by
+// the other, and sending it there would hand a credential to a host it was not
+// issued for. CPA's own login names an international credential "kimi-ai" in its
+// type, provider and file name, which is all the credential list exposes; the
+// file's `domain` field is not read, because that would mean downloading the token.
+func kimiUsageURLFor(file management.AuthFile) string {
+	for _, value := range []string{file.Type, file.Provider, file.Name} {
+		normalized := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), "_", "-")
+		if strings.Contains(normalized, "kimi-ai") || strings.Contains(normalized, "kimi.ai") {
+			return KimiInternationalUsageURL
+		}
+	}
+	return KimiUsageURL
+}
+
 func (s *Service) fetchKimiQuota(ctx context.Context, file management.AuthFile, nowMS int64) ([]QuotaWindow, error) {
 	headers := management.WithQuotaCredential(map[string]string{
 		"Accept": "application/json",
 	})
-	resp, err := s.SafeApiCall(ctx, file.AuthIndex, "GET", KimiUsageURL, headers, "")
+	resp, err := s.SafeApiCall(ctx, file.AuthIndex, "GET", kimiUsageURLFor(file), headers, "")
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +651,11 @@ func (s *Service) fetchXaiQuota(ctx context.Context, file management.AuthFile, n
 	resp, err := s.SafeApiCall(ctx, file.AuthIndex, "GET", XaiBillingMonthlyURL, headers, "")
 	if err == nil && resp.StatusCode == 200 {
 		if normBody, bErr := resp.NormalizedBody(); bErr == nil {
-			return ParseXaiBilling(normBody, nowMS)
+			plan, windows, parseErr := ParseXaiBilling(normBody, nowMS)
+			if parseErr == nil {
+				s.applyXaiSubscription(ctx, file, headers, plan)
+			}
+			return plan, windows, parseErr
 		}
 	}
 

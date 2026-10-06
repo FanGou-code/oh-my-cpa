@@ -55,12 +55,13 @@ const (
 
 // QuotaPlan represents the normalized subscription plan and tier.
 type QuotaPlan struct {
-	PlanType     string           `json:"plan_type"`               // e.g. "pro", "plus", "ultra", "team", "free"
-	PlanLabel    string           `json:"plan_label"`              // e.g. "Pro 20x", "Pro", "Ultra", "Team"
-	Tier         string           `json:"tier"`                    // "elite", "premium", "standard", "free", "unknown"
-	ExpiresAtMS  *int64           `json:"expires_at_ms,omitempty"` // epoch ms
-	ExpiresLabel string           `json:"expires_label,omitempty"`
-	ExtraUsage   *QuotaExtraUsage `json:"extra_usage,omitempty"`
+	IsSubscriptionActive *bool            `json:"subscription_active,omitempty"`
+	PlanType             string           `json:"plan_type"`               // e.g. "pro", "plus", "ultra", "team", "free"
+	PlanLabel            string           `json:"plan_label"`              // e.g. "Pro 200", "Pro", "Ultra", "Team"
+	Tier                 string           `json:"tier"`                    // "elite", "premium", "standard", "free", "unknown"
+	ExpiresAtMS          *int64           `json:"expires_at_ms,omitempty"` // epoch ms
+	ExpiresLabel         string           `json:"expires_label,omitempty"`
+	ExtraUsage           *QuotaExtraUsage `json:"extra_usage,omitempty"`
 
 	// ExpiresSource names where ExpiresAtMS came from; see the PlanSource
 	// constants. Empty on snapshots written before provenance was tracked.
@@ -68,6 +69,16 @@ type QuotaPlan struct {
 	// IsAutoRenewing reports whether upstream says the plan will renew. Nil when
 	// the source does not expose it.
 	IsAutoRenewing *bool `json:"auto_renews,omitempty"`
+	// Credits is the account's prepaid credit standing. Nil when the provider
+	// reports none.
+	Credits *QuotaCredits `json:"credits,omitempty"`
+}
+
+// QuotaCredits is a prepaid credit balance, or the statement that credits are
+// unlimited. Balance is upstream's decimal text and is empty when unlimited.
+type QuotaCredits struct {
+	Balance     string `json:"balance,omitempty"`
+	IsUnlimited bool   `json:"unlimited,omitempty"`
 }
 
 // CodexResetCredit represents an individual Codex rate limit reset credit.

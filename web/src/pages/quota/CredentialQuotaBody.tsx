@@ -43,6 +43,9 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
   // has no hover, and the caveat matters most to the reader who cannot reach one.
   const hasCapacityReading = windows.some((window) => window.usage || window.capacity);
   const availableCredits = item.reset_credits?.available_count ?? 0;
+  const creditBalanceText = item.plan?.credits?.unlimited
+    ? t('quota.credits_unlimited')
+    : item.plan?.credits?.balance;
   const applicableCredits = item.reset_credits?.applicable_available_count ?? 0;
   const creditRows = (item.reset_credits?.credits ?? [])
     .filter((credit) => credit.expires_at_ms)
@@ -118,12 +121,17 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
         />
       )}
 
-      {(item.plan?.plan_label || item.plan?.expires_at_ms || item.reset_credits) && (
+      {(item.plan?.plan_label || item.plan?.expires_at_ms || creditBalanceText || item.reset_credits) && (
         <div className={styles['meta-row']}>
           {item.plan?.plan_label && (
             <span className={styles['meta-item']}>
               <span className={styles['meta-label']}>{t('quota.col_plan')}</span>
               <span className={styles['meta-value']}>{item.plan.plan_label}</span>
+              {item.plan.subscription_active === false && (
+                <span className={styles['meta-tag']} data-subscription-inactive="true">
+                  {t('quota.subscription_inactive')}
+                </span>
+              )}
             </span>
           )}
           {item.plan?.expires_at_ms && (
@@ -144,6 +152,12 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
                   {t('quota.renewal_not_renewing')}
                 </span>
               )}
+            </span>
+          )}
+          {creditBalanceText && (
+            <span className={styles['meta-item']} data-credit-balance="true">
+              <span className={styles['meta-label']}>{t('quota.col_credit_balance')}</span>
+              <span className={styles['meta-value']}>{creditBalanceText}</span>
             </span>
           )}
           {item.reset_credits && (
