@@ -136,7 +136,7 @@ https://raw.githubusercontent.com/WizisCool/oh-my-cpa/master/docs/install-for-ag
 | 安装场景 | 方案 |
 | --- | --- |
 | 尚未部署 CPA | [全新安装](#全新安装) |
-| CPA 由 Docker Compose 部署 | [加入现有编排文件](#加入现有编排文件) |
+| CPA 由 Docker Compose 部署 | [已经安装了 CLIProxyAPI](#已经安装了-cliproxyapi) |
 | CPA 以其他方式部署 | [独立部署](#独立部署) |
 
 #### 全新安装
@@ -189,7 +189,7 @@ docker compose up -d
 访问 **`http://127.0.0.1:8080/omc/`**，以 `.env` 中 `CPA_MANAGEMENT_KEY` 的值登录。
 提供商与客户端密钥在控制台中添加；客户端请求发往 CPA：`http://127.0.0.1:8317`。
 
-#### 加入现有编排文件
+#### 已经安装了 CLIProxyAPI
 
 在运行 CPA 的编排文件的 `services:` 下添加以下服务；文件已有顶层 `volumes:` 时，
 将 `oh-my-cpa-data:` 并入其中。`cli-proxy-api` 是 CPA 官方编排文件中的服务名，服务名不同时替换为实际名称。

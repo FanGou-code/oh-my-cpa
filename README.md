@@ -146,7 +146,7 @@ password is CPA's management key.
 | Scenario | Method |
 | --- | --- |
 | CPA is not deployed yet | [New install](#new-install) |
-| CPA is deployed with Docker Compose | [Add to the existing Compose file](#add-to-the-existing-compose-file) |
+| CPA is deployed with Docker Compose | [CLIProxyAPI is already installed](#cliproxyapi-is-already-installed) |
 | CPA is deployed another way | [Standalone](#standalone) |
 
 #### New install
@@ -201,7 +201,7 @@ Open **`http://127.0.0.1:8080/omc/`** and sign in with the `CPA_MANAGEMENT_KEY` 
 from `.env`. Providers and client keys are added in the console; clients send requests
 to CPA at `http://127.0.0.1:8317`.
 
-#### Add to the existing Compose file
+#### CLIProxyAPI is already installed
 
 Add the service under `services:` in the Compose file that runs CPA, and merge
 `oh-my-cpa-data:` into the top-level `volumes:` key if one exists. `cli-proxy-api` is
