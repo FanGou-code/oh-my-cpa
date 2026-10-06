@@ -177,6 +177,25 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
     codex: [{ name: 'gpt-e2e', alias: 'gpt-e2e-preview', fork: true, 'force-mapping': false, 'display-name': 'GPT E2E Preview' }],
     claude: [{ name: 'claude-3-5-sonnet', alias: 'sonnet-latest' }],
   };
+  // The stored spelling keeps its case, as a hand-edited file would; CPA applies
+  // the rules lower-cased.
+  let oauthExcludedModels = {
+    codex: ['GPT-E2E-Legacy', 'gpt-e2e-old-*'],
+  };
+  // The static catalog CPA serves per OAuth channel. A channel absent here has
+  // none, which CPA answers with 400.
+  const CHANNEL_MODEL_DEFINITIONS = {
+    codex: [
+      { id: 'gpt-e2e', display_name: 'GPT E2E' },
+      { id: 'gpt-e2e-legacy', display_name: 'GPT E2E Legacy' },
+      { id: 'gpt-e2e-old-1', display_name: 'GPT E2E Old 1' },
+      { id: 'gpt-e2e-old-2', display_name: 'GPT E2E Old 2' },
+    ],
+    claude: [
+      { id: 'claude-3-5-sonnet', display_name: 'Claude 3.5 Sonnet' },
+      { id: 'claude-3-5-haiku', display_name: 'Claude 3.5 Haiku' },
+    ],
+  };
 
   // The codex API-key list is stateful for the same reason authFiles is: the
   // provider enable/disable flow writes it and then re-reads it, so a fixture
@@ -235,6 +254,11 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
   const V8_ROOTS = new Set(['server', 'management', 'access', 'credentials', 'routing', 'requests', 'oauth', 'multimedia', 'observability', 'plugins', 'quota-exceeded', 'api-keys', 'config-version']);
   const legacyRootIn = (document) => Object.keys(document ?? {}).find((key) => !V8_ROOTS.has(key));
   const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const syncOAuthExcludedModelsConfig = () => {
+    if (!isPlainObject(configDoc.oauth)) configDoc.oauth = {};
+    configDoc.oauth['excluded-models'] = structuredClone(oauthExcludedModels);
+  };
+  syncOAuthExcludedModelsConfig();
   const mergeConfig = (target, patch) => {
     for (const [key, value] of Object.entries(patch)) {
       if (isPlainObject(value) && isPlainObject(target[key])) mergeConfig(target[key], value);
@@ -337,7 +361,7 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       for (const credential of authFiles) {
         if (credential.disabled || credential.unavailable) continue;
         for (const model of credential.models ?? []) {
-          if (isModelExcluded(model.id, credential.excluded_models)) continue;
+          if (isModelExcluded(model.id, credential.excluded_models) || isModelExcluded(model.id, oauthExcludedModels[credential.provider])) continue;
           const aliases = (oauthModelAliases[credential.provider] ?? []).filter((alias) => alias.name === model.id);
           if (aliases.length === 0 || aliases.some((alias) => alias.fork)) modelIds.add(model.id);
           for (const alias of aliases) modelIds.add(alias.alias);
@@ -413,6 +437,16 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
     }
     if (request.method === 'GET' && path === '/credentials/models') {
       json(response, 200, { models: [{ id: 'gpt-e2e', display_name: 'GPT E2E' }] });
+      return;
+    }
+    const modelDefinitionsMatch = /^\/routing\/model-definitions\/([a-z0-9.-]+)$/.exec(path);
+    if (request.method === 'GET' && modelDefinitionsMatch) {
+      const models = CHANNEL_MODEL_DEFINITIONS[modelDefinitionsMatch[1]];
+      if (!models) {
+        json(response, 400, { error: 'unknown channel', channel: modelDefinitionsMatch[1] });
+        return;
+      }
+      json(response, 200, { channel: modelDefinitionsMatch[1], models });
       return;
     }
     if (request.method === 'GET' && path === '/credentials/download') {
@@ -548,6 +582,20 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       json(response, 200, { status: 'ok', 'config-version': 8 });
       return;
     }
+    if (settingPath.join('/') === 'oauth/excluded-models' && request.method === 'GET') {
+      json(response, 200, oauthExcludedModels);
+      return;
+    }
+    if (settingPath[0] === 'oauth' && settingPath[1] === 'excluded-models' && settingPath.length === 3 && request.method === 'DELETE') {
+      if (!(settingPath[2] in oauthExcludedModels)) {
+        json(response, 404, { error: 'not_found' });
+        return;
+      }
+      delete oauthExcludedModels[settingPath[2]];
+      syncOAuthExcludedModelsConfig();
+      json(response, 200, { status: 'ok', 'config-version': 8 });
+      return;
+    }
     if (settingPath[0] === 'plugins' && settingPath[1] === 'configs' && settingPath.length === 3) {
       const id = settingPath[2];
       if (request.method === 'GET') {
@@ -579,11 +627,16 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       for (const [channel, aliases] of Object.entries(patch.oauth?.['model-alias'] ?? {})) {
         oauthModelAliases[channel] = aliases;
       }
+      for (const [channel, rules] of Object.entries(patch.oauth?.['excluded-models'] ?? {})) {
+        oauthExcludedModels[channel] = rules;
+      }
+      syncOAuthExcludedModelsConfig();
       for (const [id, config] of Object.entries(patch.plugins?.configs ?? {})) {
         applyPluginConfig(id, { ...(pluginConfigs.get(id) ?? {}), ...config });
       }
       delete patch['api-keys'];
       if (patch.oauth) delete patch.oauth['model-alias'];
+      if (patch.oauth) delete patch.oauth['excluded-models'];
       if (patch.plugins) delete patch.plugins.configs;
       const isHandled = Object.keys(patch).every((root) => isPlainObject(patch[root]) && Object.keys(patch[root]).length === 0);
       if (isHandled) {

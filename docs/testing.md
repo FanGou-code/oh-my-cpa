@@ -55,7 +55,11 @@ Rules that keep the suite fast and honest:
   `scripts/install-chromium.test.mjs` does.
 - **Keep the fixtures hermetic.** Browser fixtures build their environment with
   `scripts/acceptance/environment.mjs`; never read the operator's `.env`, network or
-  data directory. Calendar fixtures must use the console's configured timezone rather
+  data directory. The shared seeded database in `internal/demo/demo_test.go` uses the
+  same fixed UTC reference clock as the demo export; wall time changes the generated
+  daily workload and must not change the sample behind model-concentration assertions.
+  Capture-status reads in those tests use that same seed clock.
+  Calendar fixtures must use the console's configured timezone rather
   than the host timezone; the dashboard heatmap fixtures use the default UTC calendar,
   with a script self-test spanning hosts on opposite sides of a UTC date boundary.
 
@@ -480,3 +484,26 @@ revocation, identity-only responses and configured model aliases/prefixes. Both 
 checks exercise `/model-square`; the Worker dataset captures the same safe live
 directory and models.dev facts. New logic checks, the populated built-directory
 assertion and the section geometry check are mutation-tested before delivery.
+
+### OAuth model rules
+
+`scripts/test-oauth-excluded-models.ts` owns normalization, exact/wildcard matching,
+validation, catalog coverage and independent exact rules under wildcard coverage.
+`scripts/test-oauth-model-alias.ts` pins the new mapping's retain-original default.
+Go tests beside the OAuth exclusion facade own provider replacement/deletion,
+allowlisted catalog projection, request validation and refused readback. Audit fault
+injection checks that a rejected attempt audit prevents the upstream write, while a
+rejected success audit still returns the verified rules after the write has landed.
+`scripts/fake-cpa.test.mjs` checks that provider exclusion updates and deletions stay
+consistent across dedicated reads, JSON configuration and runtime/stored YAML snapshots.
+It also owns global exact, wildcard and catch-all OAuth exclusions before alias mapping,
+independent credential exclusions, unaffected static catalogs and API-key routes, and
+restoration after clearing rules.
+The existing `oauth-management` probe owns provider tab names/artwork in the picker,
+independent section drafts, section-only saves, trailing-edge close placement, native Back guards and 1440/375/320px
+Drawer geometry. Built auth-file acceptance owns both sections' verified
+save/close/reopen/clear paths against fake CPA. The generated Worker dataset includes
+provider-wide exclusions and static catalogs separately from credential fields.
+Demo coverage requires both maps and each exported catalog; Worker tests pin
+provider-specific catalog routing, unknown-catalog handling and mutation refusal.
+Demo browser acceptance opens both rule sections and checks read-only controls.
